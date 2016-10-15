@@ -32,8 +32,89 @@ import System.IO
 import qualified Data.ByteString      as SBS
 import qualified Data.ByteString.Lazy as LBS
 
+-- | Combinator for specifying a @multipart/form-data@ request
+--   body, typically (but not always) issued from an HTML @\<form\>@.
+--
+--   @multipart/form-data@ can't be made into an ordinary content
+--   type for now in servant because it doesn't just decode the
+--   request body from some format but also performs IO in the case
+--   of writing the uploaded files to disk, e.g in @/tmp@, which is
+--   not compatible with servant's vision of a content type as things
+--   stand now.
+--
+--   The 'a' type parameter represents the Haskell type to which
+--   you are going to decode the multipart data to, where the
+--   multipart data consists in all the usual form inputs along
+--   with the files sent along through @\<input type="file"\>@
+--   fields in the form.
+--
+--   One option provided out of the box by this library is to decode
+--   to 'MultipartData':
+--
+--   @
+--   type MultipartData = ([Param], [File FilePath])
+--   @
+--
+--   Example:
+--
+--   @
+--   type API = MultipartForm MultipartData :> Post '[PlainText] String
+--   api :: Proxy API
+--   api = Proxy
+--
+--   server :: MultipartData -> Handler String
+--   server (inputs, files) = return str
+--
+--     where str = "The form was submitted with "
+--              ++ show nInputs ++ " textual inputs and "
+--              ++ show nFiles  ++ " files."
+--           nInputs = length inputs
+--           nFiles  = length files
+--   @
+--
+--   You can alternatively provide a 'FromMultipart' instance
+--   for some type of yours, allowing you to regroup data
+--   into a structured form and potentially selecting
+--   a subset of the entire form data that was submitted.
+--
+--   Example:
+--
+--   @
+--   data User = User { username :: String, pic :: FilePath }
+--
+--   instance FromMultipart User where
+--     fromMultipart (inputs, files) =
+--       User \<$\> BS.unpack (lookup "username" inputs)
+--            \<*\> fmap fileContent (lookup "pic" files)
+--
+--   type API = MultipartForm User :> Post '[PlainText] String
+--
+--   server :: User -> Handler String
+--   server usr = return str
+--
+--     where str = username usr ++ "'s profile picture"
+--              ++ " got temporarily uploaded to "
+--              ++ pic usr ++ " and will be removed from there "
+--              ++ " after this handler has run."
+--   @
+--
+--   __Important__: as mentionned in the example above,
+--   the file paths point to temporary files which get removed
+--   after your handler has run, if they are still there. It is
+--   therefore recommended to move or copy them somewhere in your
+--   handler if you need to keep the content around.
 data MultipartForm a
 
+-- | What servant gets out of a @multiart/form-data@ form submission.
+--
+--   The @[Param]@ component contains a list of
+--   @(inputname, inputvalue)@ pairs that correspond
+--   to all the non-file inputs of the form, while
+--   the @[File FilePath]@ component contains a list
+--   of uploaded files. See the haddocks for 'File' to
+--   see how you can access e.g the file path for the
+--   temporary file (removed after the handler is done)
+--   or the file size.
 type MultipartData = ([Param], [File FilePath])
 
 class FromMultipart a where
