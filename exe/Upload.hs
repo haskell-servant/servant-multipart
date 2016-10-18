@@ -25,20 +25,21 @@ logging app req resp = do
   app req resp
 
 upload :: Server API
-upload (inputs, files) = do
+upload multipartData = do
   liftIO $ do
     putStrLn "Inputs:"
-    mapM_ print inputs
-    putStrLn "Files:"
-    mapM_ print files
-    forM_ files $ \(fileInputName, file) -> do
-      content <- readFile (fileContent file)
-      putStrLn $ "Content of " ++ show (fileName file)
+    forM_ (inputs multipartData) $ \input ->
+      putStrLn $ "  " ++ show (iName input)
+            ++ " -> " ++ show (iValue input)
+
+    forM_ (files multipartData) $ \file -> do
+      content <- readFile (fdFilePath file)
+      putStrLn $ "Content of " ++ show (fdFileName file)
       putStrLn content
   return 0
 
 startServer :: IO ()
-startServer = run 8080 (logging $ serve api upload)
+startServer = run 8080 (serve api upload)
 
 main = withSocketsDo $ do
   forkIO startServer
