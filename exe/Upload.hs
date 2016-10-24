@@ -14,16 +14,21 @@ import Network.Wai.Handler.Warp
 import Servant
 import Servant.Multipart
 
+-- Our API, which consists in a single POST endpoint at /
+-- that takes a multipart/form-data request body and
+-- pretty-prints the data it got to stdout before returning 0.
 type API = MultipartForm MultipartData :> Post '[JSON] Integer
 
 api :: Proxy API
 api = Proxy
 
-logging :: Middleware
-logging app req resp = do
-  print req
-  app req resp
-
+-- The handler for our single endpoint.
+-- Its concrete type is:
+--   MultipartData -> Handler Integer
+--
+-- MultipartData consists in textual inputs,
+-- accessible through its "inputs" field, as well
+-- as files, accessible through its "files" field.
 upload :: Server API
 upload multipartData = do
   liftIO $ do
@@ -35,14 +40,18 @@ upload multipartData = do
     forM_ (files multipartData) $ \file -> do
       content <- readFile (fdFilePath file)
       putStrLn $ "Content of " ++ show (fdFileName file)
+              ++ " at " ++ fdFilePath file
       putStrLn content
   return 0
 
 startServer :: IO ()
 startServer = run 8080 (serve api upload)
 
+main :: IO ()
 main = withSocketsDo $ do
   forkIO startServer
+  -- we fork the server in a separate thread and send a test
+  -- request to it from the main thread.
   manager <- newManager defaultManagerSettings
   req <- parseRequest "http://localhost:8080/"
   resp <- flip httpLbs manager =<< formDataBody form req

@@ -143,6 +143,8 @@ data MultipartData = MultipartData
   , files  :: [FileData]
   }
 
+-- TODO: this is specific to Tmp. we need a version that
+-- can handle Mem as well.
 fromRaw :: ([Param], [File FilePath]) -> MultipartData
 fromRaw (inputs, files) = MultipartData is fs
 
@@ -273,6 +275,7 @@ addMultipartHandling opts Delayed{..} =
               fuzzyMultipartCTCheck (contentTypeH request)
               b <- bodyD
               b' <- check opts
+              addCleanup (cleanup b')
               return (b, b')
           , serverD   = \cs a (b, (multipartData, _st)) req ->
               case fromMultipart multipartData of
@@ -280,10 +283,7 @@ addMultipartHandling opts Delayed{..} =
                   err400 { errBody = "fromMultipart returned Nothing" }
                 Just x  -> fmap ($ x) $
                   serverD cs a b req
-          , cleanupD  = \(_, multipartStuffs) -> cleanup multipartStuffs
-          , capturesD = capturesD
-          , methodD   = methodD
-          , authD     = authD
+          , ..
           }
 
   where contentTypeH req = fromMaybe "application/octed-stream" $
