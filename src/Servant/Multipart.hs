@@ -269,7 +269,7 @@ addMultipartHandling opts subserver =
           err400 { errBody = "fromMultipart returned Nothing" }
         Just x -> return x
 
-    contentTypeH req = fromMaybe "application/octed-stream" $
+    contentTypeH req = fromMaybe "application/octet-stream" $
           lookup "Content-Type" (requestHeaders req)
 
 -- Check that the content type is one of:
