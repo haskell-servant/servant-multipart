@@ -244,49 +244,32 @@ instance ( FromMultipart a
 -- returning the data as well as the resourcet InternalState
 -- that allows us to properly clean up the temporary files
 -- later on.
-check :: MultipartOptions -> DelayedIO (MultipartData, InternalState)
-check opts = withRequest $ \request -> liftIO $ do
-  st <- createInternalState
-  rawData <- parseRequestBodyEx parseOpts (tmpBackend opts st) request
-  return (fromRaw rawData, st)
-
+check :: MultipartOptions -> DelayedIO MultipartData
+check opts = withRequest $ \request -> do
+  st <- liftResourceT getInternalState
+  rawData <- liftIO $ parseRequestBodyEx parseOpts (tmpBackend opts st) request
+  return (fromRaw rawData)
   where parseOpts = generalOptions opts
-
--- Perform cleanup of uploaded files in /tmp.
-cleanup :: (MultipartData, InternalState) -> IO ()
-cleanup (multipartData, internalState) = do
-  removeFileKeys <- forM (files multipartData) $ \file ->
-    runInternalState
-      (register $ do
-          exists <- doesFileExist (fdFilePath file)
-          when exists $ removeFile (fdFilePath file)
-      )
-      internalState
-  mapM_ release removeFileKeys
-  closeInternalState internalState
 
 -- Add multipart extraction support to a Delayed.
 addMultipartHandling :: FromMultipart multipart
                      => MultipartOptions
                      -> Delayed env (multipart -> a)
                      -> Delayed env a
-addMultipartHandling opts Delayed{..} =
-  Delayed { bodyD     = withRequest $ \request -> do
-              fuzzyMultipartCTCheck (contentTypeH request)
-              b <- bodyD
-              b' <- check opts
-              addCleanup (cleanup b')
-              return (b, b')
-          , serverD   = \cs a (b, (multipartData, _st)) req ->
-              case fromMultipart multipartData of
-                Nothing -> FailFatal $
-                  err400 { errBody = "fromMultipart returned Nothing" }
-                Just x  -> fmap ($ x) $
-                  serverD cs a b req
-          , ..
-          }
+addMultipartHandling opts subserver =
+  addBodyCheck subserver contentCheck bodyCheck
+  where
+    contentCheck = withRequest $ \request ->
+      fuzzyMultipartCTCheck (contentTypeH request)
 
-  where contentTypeH req = fromMaybe "application/octed-stream" $
+    bodyCheck () = do
+      mpd <- check opts :: DelayedIO MultipartData
+      case fromMultipart mpd of
+        Nothing -> liftRouteResult $ FailFatal
+          err400 { errBody = "fromMultipart returned Nothing" }
+        Just x -> return x
+
+    contentTypeH req = fromMaybe "application/octed-stream" $
           lookup "Content-Type" (requestHeaders req)
 
 -- Check that the content type is one of:
@@ -311,21 +294,10 @@ tmpBackend :: MultipartOptions
            -> ignored2
            -> IO SBS.ByteString
            -> IO FilePath
-tmpBackend opts st _ _ popper = do
-  (hcloseReleaseKey, (fp, h)) <-
-    flip runInternalState st $ allocate tmpFile (hClose . snd)
-  fix $ \loop -> do
-    bs <- popper
-    unless (SBS.null bs) $ do
-      SBS.hPut h bs
-      loop
-  -- make sure the file is closed by now
-  release hcloseReleaseKey
-  return fp
-
-  where tmpFile = do
-          tmpdir <- getTmpDir (tmpOptions opts)
-          openBinaryTempFile tmpdir $ filenamePat (tmpOptions opts)
+tmpBackend opts =
+    tempFileBackEndOpts (getTmpDir tmpOpts) (filenamePat tmpOpts)
+  where
+    tmpOpts = tmpOptions opts
 
 -- | Global options for configuring how the
 --   server should handle multipart data.
