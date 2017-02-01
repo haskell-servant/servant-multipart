@@ -2,7 +2,7 @@ name:                servant-multipart
 version:             0.1
 synopsis:            multipart/form-data (e.g file upload) support for servant
 description:         Please see README.md
-homepage:            https://github.com/alpmestan/servant-multipart#readme
+homepage:            https://github.com/haskell-servant/servant-multipart#readme
 license:             BSD3
 license-file:        LICENSE
 author:              Alp Mestanogullari
@@ -50,4 +50,4 @@ executable upload
 
 source-repository head
   type:     git
-  location: https://github.com/alpmestan/servant-multipart
+  location: https://github.com/haskell-servent/servant-multipart
