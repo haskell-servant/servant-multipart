@@ -11,6 +11,10 @@ copyright:           2016 Alp Mestanogullari
 category:            Web
 build-type:          Simple
 cabal-version:       >=1.10
+tested-with:
+  GHC==7.8.4,
+  GHC==7.10.3,
+  GHC==8.0.2
 
 library
   hs-source-dirs:      src
@@ -21,8 +25,8 @@ library
                 directory,
                 http-media,
                 resourcet,
-                servant,
-                servant-server,
+                servant >=0.10 && <0.11,
+                servant-server >=0.10 && <0.11,
                 text,
                 wai,
                 wai-extra
