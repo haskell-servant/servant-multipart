@@ -55,7 +55,8 @@ import qualified Data.ByteString.Lazy as LBS
 --   request body from some format but also performs IO in the case
 --   of writing the uploaded files to disk, e.g in @/tmp@, which is
 --   not compatible with servant's vision of a content type as things
---   stand now.
+--   stand now. This also means that 'MultipartForm' can't be used in
+--   conjunction with 'ReqBody' in an endpoint.
 --
 --   The 'a' type parameter represents the Haskell type to which
 --   you are going to decode the multipart data to, where the
