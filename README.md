@@ -1,5 +1,3 @@
-**(Still work in progress, don't use it yet.)**
-
 # servant-multipart
 
 This package adds support for file upload to the servant
