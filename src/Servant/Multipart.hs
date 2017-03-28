@@ -362,3 +362,7 @@ instance {-# OVERLAPPABLE #-}
 instance {-# OVERLAPPING #-}
          LookupContext cs a => LookupContext (a ': cs) a where
   lookupContext _ (c :. _) = Just c
+
+instance HasLink sub => HasLink (MultipartForm a :> sub) where
+  type MkLink (MultipartForm a :> sub) = MkLink sub
+  toLink _ = toLink (Proxy :: Proxy sub)
