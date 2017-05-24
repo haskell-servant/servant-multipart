@@ -146,7 +146,7 @@ data MultipartData = MultipartData
 
 -- TODO: this is specific to Tmp. we need a version that
 -- can handle Mem as well.
-fromRaw :: ([Param], [File FilePath]) -> MultipartData
+fromRaw :: ([Network.Wai.Parse.Param], [File FilePath]) -> MultipartData
 fromRaw (inputs, files) = MultipartData is fs
 
   where is = map (\(name, val) -> Input (dec name) (dec val)) inputs
