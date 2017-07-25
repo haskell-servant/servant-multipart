@@ -8,7 +8,7 @@ license-file:        LICENSE
 author:              Alp Mestanogullari
 maintainer:          alpmestan@gmail.com
 copyright:           2016-2017 Alp Mestanogullari
-category:            Web
+category:            Web, Servant
 build-type:          Simple
 cabal-version:       >=1.10
 tested-with:
