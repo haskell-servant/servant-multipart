@@ -1,5 +1,6 @@
 name:                servant-multipart
 version:             0.10.0.1
+x-revision:          1
 synopsis:            multipart/form-data (e.g file upload) support for servant
 description:         Please see README.md
 homepage:            https://github.com/haskell-servant/servant-multipart#readme
@@ -14,7 +15,8 @@ cabal-version:       >=1.10
 tested-with:
   GHC==7.8.4,
   GHC==7.10.3,
-  GHC==8.0.2
+  GHC==8.0.2,
+  GHC==8.2.1
 
 library
   hs-source-dirs:      src
@@ -23,7 +25,7 @@ library
                 base >= 4.7 && < 5,
                 bytestring >= 0.10 && <0.11,
                 directory,
-                http-media >= 0.6 && <0.7,
+                http-media >= 0.6 && <0.8,
                 resourcet >=1.1 && <1.2,
                 servant >=0.10 && <0.12,
                 servant-server >=0.10 && <0.12,
