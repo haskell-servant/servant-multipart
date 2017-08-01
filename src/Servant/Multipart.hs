@@ -8,6 +8,8 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE UndecidableInstances #-}
 -- | @multipart/form-data@ support for servant.
 --
 --   This is mostly useful for adding file upload support to
@@ -21,6 +23,7 @@ module Servant.Multipart
   , MultipartOptions(..)
   , defaultMultipartOptions
   , TmpBackendOptions(..)
+  , LbsBackendOptions(..)
   , defaultTmpBackendOptions
   , Input(..)
   , FileData(..)
@@ -125,7 +128,7 @@ import qualified Data.ByteString.Lazy as LBS
 --   after your handler has run, if they are still there. It is
 --   therefore recommended to move or copy them somewhere in your
 --   handler code if you need to keep the content around.
-data MultipartForm a
+data MultipartForm options a
 
 -- | What servant gets out of a @multipart/form-data@ form submission.
 --
@@ -139,20 +142,22 @@ data MultipartForm a
 --   'FileData' which among other things contains the path to the temporary file
 --   (to be removed when your handler is done running) with a given uploaded
 --   file's content. See haddocks for 'FileData'.
-data MultipartData = MultipartData
+data MultipartData options = MultipartData
   { inputs :: [Input]
-  , files  :: [FileData]
+  , files  :: [FileData options]
   }
+
+
 
 -- TODO: this is specific to Tmp. we need a version that
 -- can handle Mem as well.
-fromRaw :: ([Network.Wai.Parse.Param], [File FilePath]) -> MultipartData
+fromRaw :: forall options. ([Network.Wai.Parse.Param], [File (MultipartResult options)]) -> MultipartData options
 fromRaw (inputs, files) = MultipartData is fs
 
   where is = map (\(name, val) -> Input (dec name) (dec val)) inputs
         fs = map toFile files
 
-        toFile :: File FilePath -> FileData
+        toFile :: File (MultipartResult options) -> FileData options
         toFile (iname, fileinfo) =
           FileData (dec iname)
                    (dec $ fileName fileinfo)
@@ -164,20 +169,24 @@ fromRaw (inputs, files) = MultipartData is fs
 -- | Representation for an uploaded file, usually resulting from
 --   picking a local file for an HTML input that looks like
 --   @\<input type="file" name="somefile" /\>@.
-data FileData = FileData
+data FileData options = FileData
   { fdInputName :: Text     -- ^ @name@ attribute of the corresponding
                             --   HTML @\<input\>@
   , fdFileName  :: Text     -- ^ name of the file on the client's disk
   , fdFileCType :: Text     -- ^ MIME type for the file
-  , fdFilePath  :: FilePath -- ^ path to the temporary file that has the
+  , fdPayload   :: MultipartResult options
+                            -- ^ path to the temporary file that has the
                             --   content of the user's original file. Only
                             --   valid during the execution of your handler as
                             --   it gets removed right after, which means you
                             --   really want to move or copy it in your handler.
-  } deriving (Eq, Show)
+  }
+
+deriving instance Eq (MultipartResult options) => Eq (FileData options)
+deriving instance Show (MultipartResult options) => Show (FileData options)
 
 -- | Lookup a file input with the given @name@ attribute.
-lookupFile :: Text -> MultipartData -> Maybe FileData
+lookupFile :: Text -> MultipartData options -> Maybe (FileData options)
 lookupFile iname = find ((==iname) . fdInputName) . files
 
 -- | Representation for a textual input (any @\<input\>@ type but @file@).
@@ -189,7 +198,7 @@ data Input = Input
   } deriving (Eq, Show)
 
 -- | Lookup a textual input with the given @name@ attribute.
-lookupInput :: Text -> MultipartData -> Maybe Text
+lookupInput :: Text -> MultipartData options  -> Maybe Text
 lookupInput iname = fmap iValue . find ((==iname) . iName) . inputs
 
 -- | 'MultipartData' is the type representing
@@ -209,26 +218,27 @@ lookupInput iname = fmap iValue . find ((==iname) . iName) . inputs
 --       User \<$\> lookupInput "username" (inputs form)
 --            \<*\> fmap fdFilePath (lookupFile "pic" $ files form)
 --   @
-class FromMultipart a where
+class FromMultipart options a where
   -- | Given a value of type 'MultipartData', which consists
   --   in a list of textual inputs and another list for
   --   files, try to extract a value of type @a@. When
   --   extraction fails, servant errors out with status code 400.
-  fromMultipart :: MultipartData -> Maybe a
+  fromMultipart :: MultipartData options -> Maybe a
 
-instance FromMultipart MultipartData where
+instance FromMultipart options (MultipartData options) where
   fromMultipart = Just
 
 -- | Upon seeing @MultipartForm a :> ...@ in an API type,
 ---  servant-server will hand a value of type @a@ to your handler
 --   assuming the request body's content type is
 --   @multipart/form-data@ and the call to 'fromMultipart' succeeds.
-instance ( FromMultipart a
-         , LookupContext config MultipartOptions
+instance ( FromMultipart options a
+         , MultipartBackend options
+         , LookupContext config (MultipartOptions options)
          , HasServer sublayout config )
-      => HasServer (MultipartForm a :> sublayout) config where
+      => HasServer (MultipartForm options a :> sublayout) config where
 
-  type ServerT (MultipartForm a :> sublayout) m =
+  type ServerT (MultipartForm options a :> sublayout) m =
     a -> ServerT sublayout m
 
   route Proxy config subserver =
@@ -236,7 +246,7 @@ instance ( FromMultipart a
     where
       psub  = Proxy :: Proxy sublayout
       pbak  = Proxy :: Proxy b
-      popts = Proxy :: Proxy MultipartOptions
+      popts = Proxy :: Proxy (MultipartOptions options)
       multipartOpts = fromMaybe defaultMultipartOptions
                     $ lookupContext popts config
       subserver' = addMultipartHandling multipartOpts subserver
@@ -245,16 +255,16 @@ instance ( FromMultipart a
 -- returning the data as well as the resourcet InternalState
 -- that allows us to properly clean up the temporary files
 -- later on.
-check :: MultipartOptions -> DelayedIO MultipartData
+check :: MultipartBackend options => MultipartOptions options -> DelayedIO (MultipartData options)
 check opts = withRequest $ \request -> do
   st <- liftResourceT getInternalState
-  rawData <- liftIO $ parseRequestBodyEx parseOpts (tmpBackend opts st) request
+  rawData <- liftIO $ parseRequestBodyEx parseOpts (backend (options opts) st) request
   return (fromRaw rawData)
   where parseOpts = generalOptions opts
 
 -- Add multipart extraction support to a Delayed.
-addMultipartHandling :: FromMultipart multipart
-                     => MultipartOptions
+addMultipartHandling :: forall options multipart env a. (FromMultipart options multipart, MultipartBackend options)
+                     => MultipartOptions options
                      -> Delayed env (multipart -> a)
                      -> Delayed env a
 addMultipartHandling opts subserver =
@@ -264,7 +274,7 @@ addMultipartHandling opts subserver =
       fuzzyMultipartCTCheck (contentTypeH request)
 
     bodyCheck () = do
-      mpd <- check opts :: DelayedIO MultipartData
+      mpd <- check opts :: DelayedIO (MultipartData options)
       case fromMultipart mpd of
         Nothing -> liftRouteResult $ FailFatal
           err400 { errBody = "fromMultipart returned Nothing" }
@@ -289,17 +299,6 @@ fuzzyMultipartCTCheck ct
           "multipart/form-data" | Just _bound <- lookup "boundary" attrs -> True
           _ -> False
 
-tmpBackend :: MultipartOptions
-           -> InternalState
-           -> ignored1
-           -> ignored2
-           -> IO SBS.ByteString
-           -> IO FilePath
-tmpBackend opts =
-    tempFileBackEndOpts (getTmpDir tmpOpts) (filenamePat tmpOpts)
-  where
-    tmpOpts = tmpOptions opts
-
 -- | Global options for configuring how the
 --   server should handle multipart data.
 --
@@ -309,10 +308,39 @@ tmpBackend opts =
 --   the temporary file backend. See haddocks for
 --   'ParseRequestBodyOptions' and 'TmpBackendOptions' respectively
 --   for more information on what you can tweak.
-data MultipartOptions = MultipartOptions
+data MultipartOptions options = MultipartOptions
   { generalOptions :: ParseRequestBodyOptions
-  , tmpOptions     :: TmpBackendOptions
+  , options        :: options
   }
+
+class MultipartBackend options where
+    type MultipartResult options :: *
+
+    backend :: options
+            -> InternalState
+            -> ignored1
+            -> ignored2
+            -> IO SBS.ByteString
+            -> IO (MultipartResult options)
+
+    defaultBackendOptions :: options
+
+instance MultipartBackend TmpBackendOptions where
+    type MultipartResult TmpBackendOptions = FilePath
+
+    defaultBackendOptions = defaultTmpBackendOptions
+    backend opts = tmpBackend
+      where
+        tmpBackend = tempFileBackEndOpts (getTmpDir opts) (filenamePat opts)
+
+instance MultipartBackend LbsBackendOptions where
+    type MultipartResult LbsBackendOptions = LBS.ByteString
+
+    defaultBackendOptions = LbsBackendOptions
+    backend opts _ = lbsBackEnd
+
+-- | TODO: write me
+data LbsBackendOptions = LbsBackendOptions
 
 -- | Configuration for the temporary file based backend.
 --
@@ -338,10 +366,10 @@ defaultTmpBackendOptions = TmpBackendOptions
 --
 --   Uses 'defaultParseRequestBodyOptions' and
 --   'defaultTmpBackendOptions' respectively.
-defaultMultipartOptions :: MultipartOptions
+defaultMultipartOptions :: MultipartBackend options => MultipartOptions options
 defaultMultipartOptions = MultipartOptions
   { generalOptions = defaultParseRequestBodyOptions
-  , tmpOptions = defaultTmpBackendOptions
+  , options = defaultBackendOptions
   }
 
 -- Utility class that's like HasContextEntry

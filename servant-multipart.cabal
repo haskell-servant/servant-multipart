@@ -42,6 +42,7 @@ executable upload
   build-depends:
                 base,
                 http-client,
+                bytestring,
                 network,
                 servant,
                 servant-multipart,
