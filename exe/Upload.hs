@@ -19,7 +19,7 @@ import qualified Data.ByteString.Lazy as LBS
 -- Our API, which consists in a single POST endpoint at /
 -- that takes a multipart/form-data request body and
 -- pretty-prints the data it got to stdout before returning 0.
-type API = MultipartForm LbsBackendOptions (MultipartData LbsBackendOptions) :> Post '[JSON] Integer
+type API = MultipartForm Mem (MultipartData Mem) :> Post '[JSON] Integer
 
 api :: Proxy API
 api = Proxy
@@ -40,7 +40,7 @@ upload multipartData = do
             ++ " -> " ++ show (iValue input)
 
     forM_ (files multipartData) $ \file -> do
-      let content = fdFilePath file
+      let content = fdPayload file
       putStrLn $ "Content of " ++ show (fdFileName file)
       LBS.putStr content
   return 0
