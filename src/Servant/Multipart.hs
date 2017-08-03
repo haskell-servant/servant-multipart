@@ -309,10 +309,14 @@ fuzzyMultipartCTCheck ct
 --
 --   'generalOptions' lets you specify mostly multipart parsing
 --   related options, such as the maximum file size, while
---   'options' lets you configure aspects specific to
---   the temporary file backend. See haddocks for
---   'ParseRequestBodyOptions' and 'TmpBackendOptions' respectively
---   for more information on what you can tweak.
+--   'options' lets you configure aspects specific to the chosen
+--   backend. Note: there isn't anything to tweak in a memory
+--   backend ('Mem'). Maximum file size etc. options are in
+--   'ParseRequestBodyOptions'.
+--
+--   See haddocks for 'ParseRequestBodyOptions' and
+--   'TmpBackendOptions' respectively for more information on
+--   what you can tweak.
 data MultipartOptions tag = MultipartOptions
   { generalOptions :: ParseRequestBodyOptions
   , options        :: MultipartBackendOptions tag
