@@ -256,9 +256,9 @@ instance ( FromMultipart tag a
 -- that allows us to properly clean up the temporary files
 -- later on.
 check :: MultipartBackend tag => Proxy tag -> MultipartOptions tag -> DelayedIO (MultipartData tag)
-check prx tag = withRequest $ \request -> do
+check pTag tag = withRequest $ \request -> do
   st <- liftResourceT getInternalState
-  rawData <- liftIO $ parseRequestBodyEx parseOpts (backend prx (options tag) st) request
+  rawData <- liftIO $ parseRequestBodyEx parseOpts (backend pTag (options tag) st) request
   return (fromRaw rawData)
   where parseOpts = generalOptions tag
 
@@ -268,14 +268,14 @@ addMultipartHandling :: forall tag multipart env a. (FromMultipart tag multipart
                      -> MultipartOptions tag
                      -> Delayed env (multipart -> a)
                      -> Delayed env a
-addMultipartHandling prx opts subserver =
+addMultipartHandling pTag opts subserver =
   addBodyCheck subserver contentCheck bodyCheck
   where
     contentCheck = withRequest $ \request ->
       fuzzyMultipartCTCheck (contentTypeH request)
 
     bodyCheck () = do
-      mpd <- check prx opts :: DelayedIO (MultipartData tag)
+      mpd <- check pTag opts :: DelayedIO (MultipartData tag)
       case fromMultipart mpd of
         Nothing -> liftRouteResult $ FailFatal
           err400 { errBody = "fromMultipart returned Nothing" }
@@ -345,13 +345,10 @@ instance MultipartBackend Tmp where
 
 instance MultipartBackend Mem where
     type MultipartResult Mem = LBS.ByteString
-    type MultipartBackendOptions Mem = LbsBackendOptions
+    type MultipartBackendOptions Mem = ()
 
-    defaultBackendOptions _ = LbsBackendOptions
+    defaultBackendOptions _ = ()
     backend _ opts _ = lbsBackEnd
-
--- | TODO: write me
-data LbsBackendOptions = LbsBackendOptions
 
 -- | Configuration for the temporary file based backend.
 --
@@ -378,9 +375,9 @@ defaultTmpBackendOptions = TmpBackendOptions
 --   Uses 'defaultParseRequestBodyOptions' and
 --   'defaultTmpBackendOptions' respectively.
 defaultMultipartOptions :: MultipartBackend tag => Proxy tag -> MultipartOptions tag
-defaultMultipartOptions prx = MultipartOptions
+defaultMultipartOptions pTag = MultipartOptions
   { generalOptions = defaultParseRequestBodyOptions
-  , options = defaultBackendOptions prx
+  , options = defaultBackendOptions pTag
   }
 
 -- Utility class that's like HasContextEntry
