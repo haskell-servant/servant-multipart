@@ -155,7 +155,8 @@ data MultipartData tag = MultipartData
   , files  :: [FileData tag]
   }
 
-fromRaw :: forall tag. ([Network.Wai.Parse.Param], [File (MultipartResult tag)]) -> MultipartData tag
+fromRaw :: forall tag. ([Network.Wai.Parse.Param], [File (MultipartResult tag)])
+        -> MultipartData tag
 fromRaw (inputs, files) = MultipartData is fs
 
   where is = map (\(name, val) -> Input (dec name) (dec val)) inputs
@@ -259,10 +260,17 @@ instance ( FromMultipart tag a
 -- returning the data as well as the resourcet InternalState
 -- that allows us to properly clean up the temporary files
 -- later on.
-check :: MultipartBackend tag => Proxy tag -> MultipartOptions tag -> DelayedIO (MultipartData tag)
+check :: MultipartBackend tag
+      => Proxy tag
+      -> MultipartOptions tag
+      -> DelayedIO (MultipartData tag)
 check pTag tag = withRequest $ \request -> do
   st <- liftResourceT getInternalState
-  rawData <- liftIO $ parseRequestBodyEx parseOpts (backend pTag (options tag) st) request
+  rawData <- liftIO
+      $ parseRequestBodyEx
+          parseOpts
+          (backend pTag (backendOptions tag) st)
+          request
   return (fromRaw rawData)
   where parseOpts = generalOptions tag
 
@@ -309,7 +317,7 @@ fuzzyMultipartCTCheck ct
 --
 --   'generalOptions' lets you specify mostly multipart parsing
 --   related options, such as the maximum file size, while
---   'options' lets you configure aspects specific to the chosen
+--   'backendOptions' lets you configure aspects specific to the chosen
 --   backend. Note: there isn't anything to tweak in a memory
 --   backend ('Mem'). Maximum file size etc. options are in
 --   'ParseRequestBodyOptions'.
@@ -318,8 +326,8 @@ fuzzyMultipartCTCheck ct
 --   'TmpBackendOptions' respectively for more information on
 --   what you can tweak.
 data MultipartOptions tag = MultipartOptions
-  { generalOptions :: ParseRequestBodyOptions
-  , options        :: MultipartBackendOptions tag
+  { generalOptions        :: ParseRequestBodyOptions
+  , backendOptions        :: MultipartBackendOptions tag
   }
 
 class MultipartBackend tag where
@@ -385,7 +393,7 @@ defaultTmpBackendOptions = TmpBackendOptions
 defaultMultipartOptions :: MultipartBackend tag => Proxy tag -> MultipartOptions tag
 defaultMultipartOptions pTag = MultipartOptions
   { generalOptions = defaultParseRequestBodyOptions
-  , options = defaultBackendOptions pTag
+  , backendOptions = defaultBackendOptions pTag
   }
 
 -- Utility class that's like HasContextEntry
