@@ -61,6 +61,10 @@ import qualified Data.ByteString.Lazy as LBS
 --   stand now. This also means that 'MultipartForm' can't be used in
 --   conjunction with 'ReqBody' in an endpoint.
 --
+--   The 'tag' type parameter instructs the function to handle data
+--   either as data to be saved to temporary storage ('Tmp') or saved to
+--   memory ('Mem').
+--
 --   The 'a' type parameter represents the Haskell type to which
 --   you are going to decode the multipart data to, where the
 --   multipart data consists in all the usual form inputs along
@@ -73,12 +77,12 @@ import qualified Data.ByteString.Lazy as LBS
 --   Example:
 --
 --   @
---   type API = MultipartForm MultipartData :> Post '[PlainText] String
+--   type API = MultipartForm Tmp (MultipartData Tmp) :> Post '[PlainText] String
 --
 --   api :: Proxy API
 --   api = Proxy
 --
---   server :: MultipartData -> Handler String
+--   server :: MultipartData Tmp -> Handler String
 --   server multipartData = return str
 --
 --     where str = "The form was submitted with "
@@ -100,12 +104,12 @@ import qualified Data.ByteString.Lazy as LBS
 --   @
 --   data User = User { username :: Text, pic :: FilePath }
 --
---   instance FromMultipart User where
+--   instance FromMultipart Tmp User where
 --     fromMultipart multipartData =
 --       User \<$\> lookupInput "username" multipartData
 --            \<*\> fmap fileContent (lookupFile "pic" multipartData)
 --
---   type API = MultipartForm User :> Post '[PlainText] String
+--   type API = MultipartForm Tmp User :> Post '[PlainText] String
 --
 --   server :: User -> Handler String
 --   server usr = return str
@@ -132,6 +136,10 @@ data MultipartForm tag a
 
 -- | What servant gets out of a @multipart/form-data@ form submission.
 --
+--   The type parameter 'tag' tells if 'MultipartData' is stored as a
+--   temporary file or stored in memory. 'tag' is type of either 'Mem'
+--   or 'Tmp'.
+--
 --   The 'inputs' field contains a list of textual 'Input's, where
 --   each input for which a value is provided gets to be in this list,
 --   represented by the input name and the input value. See haddocks for
@@ -147,17 +155,13 @@ data MultipartData tag = MultipartData
   , files  :: [FileData tag]
   }
 
-
-
--- TODO: this is specific to Tmp. we need a version that
--- can handle Mem as well.
-fromRaw :: forall options. ([Network.Wai.Parse.Param], [File (MultipartResult options)]) -> MultipartData options
+fromRaw :: forall tag. ([Network.Wai.Parse.Param], [File (MultipartResult tag)]) -> MultipartData tag
 fromRaw (inputs, files) = MultipartData is fs
 
   where is = map (\(name, val) -> Input (dec name) (dec val)) inputs
         fs = map toFile files
 
-        toFile :: File (MultipartResult options) -> FileData options
+        toFile :: File (MultipartResult tag) -> FileData tag
         toFile (iname, fileinfo) =
           FileData (dec iname)
                    (dec $ fileName fileinfo)
@@ -305,7 +309,7 @@ fuzzyMultipartCTCheck ct
 --
 --   'generalOptions' lets you specify mostly multipart parsing
 --   related options, such as the maximum file size, while
---   'tmpOptions' lets you configure aspects specific to
+--   'options' lets you configure aspects specific to
 --   the temporary file backend. See haddocks for
 --   'ParseRequestBodyOptions' and 'TmpBackendOptions' respectively
 --   for more information on what you can tweak.
@@ -328,10 +332,10 @@ class MultipartBackend tag where
 
     defaultBackendOptions :: Proxy tag -> MultipartBackendOptions tag
 
--- | Tag for temporary files
+-- | Tag for data stored as a temporary file
 data Tmp
 
--- | Tag for items in memory
+-- | Tag for data stored in memory
 data Mem
 
 instance MultipartBackend Tmp where
@@ -373,7 +377,7 @@ defaultTmpBackendOptions = TmpBackendOptions
 -- | Default configuration for multipart handling.
 --
 --   Uses 'defaultParseRequestBodyOptions' and
---   'defaultTmpBackendOptions' respectively.
+--   'defaultBackendOptions' respectively.
 defaultMultipartOptions :: MultipartBackend tag => Proxy tag -> MultipartOptions tag
 defaultMultipartOptions pTag = MultipartOptions
   { generalOptions = defaultParseRequestBodyOptions
