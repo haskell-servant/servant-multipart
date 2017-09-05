@@ -107,7 +107,7 @@ import qualified Data.ByteString.Lazy as LBS
 --   instance FromMultipart Tmp User where
 --     fromMultipart multipartData =
 --       User \<$\> lookupInput "username" multipartData
---            \<*\> fmap fileContent (lookupFile "pic" multipartData)
+--            \<*\> fmap fdPayload (lookupFile "pic" multipartData)
 --
 --   type API = MultipartForm Tmp User :> Post '[PlainText] String
 --
@@ -218,10 +218,10 @@ lookupInput iname = fmap iValue . find ((==iname) . iName) . inputs
 --   @
 --   data User = User { username :: Text, pic :: FilePath }
 --
---   instance FromMultipart User where
+--   instance FromMultipart Tmp User where
 --     fromMultipart form =
 --       User \<$\> lookupInput "username" (inputs form)
---            \<*\> fmap fdFilePath (lookupFile "pic" $ files form)
+--            \<*\> fmap fdPayload (lookupFile "pic" $ files form)
 --   @
 class FromMultipart tag a where
   -- | Given a value of type 'MultipartData', which consists
