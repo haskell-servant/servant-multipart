@@ -32,15 +32,16 @@ module Servant.Multipart
   , ToMultipartSample(..)
   ) where
 
-import Control.Lens ((<>~), view)
+import Control.Lens ((<>~), (&), view)
 import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Resource
 import Data.ByteString.Lazy (ByteString)
+import Data.Foldable (foldMap)
 import Data.Function
 import Data.List (find)
 import Data.Maybe
-import Data.Semigroup
+import Data.Monoid
 import Data.Text (Text, unpack)
 import Data.Text.Encoding (decodeUtf8)
 import Data.Typeable
