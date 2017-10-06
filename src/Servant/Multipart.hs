@@ -1,5 +1,6 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -27,8 +28,11 @@ module Servant.Multipart
   , defaultTmpBackendOptions
   , Input(..)
   , FileData(..)
+  -- * servant-docs
+  , ToMultipartSample(..)
   ) where
 
+import Control.Lens ((<>~), view)
 import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Resource
@@ -36,13 +40,15 @@ import Data.ByteString.Lazy (ByteString)
 import Data.Function
 import Data.List (find)
 import Data.Maybe
-import Data.Text (Text)
+import Data.Semigroup
+import Data.Text (Text, unpack)
 import Data.Text.Encoding (decodeUtf8)
 import Data.Typeable
 import Network.HTTP.Media ((//))
 import Network.Wai
 import Network.Wai.Parse
 import Servant
+import Servant.Docs
 import Servant.Server.Internal
 import System.Directory
 import System.IO
@@ -418,3 +424,60 @@ instance {-# OVERLAPPING #-}
 instance HasLink sub => HasLink (MultipartForm a :> sub) where
   type MkLink (MultipartForm a :> sub) = MkLink sub
   toLink _ = toLink (Proxy :: Proxy sub)
+
+class ToMultipartSample tag a where
+  toMultipartSamples :: Proxy a -> [(Text, MultipartData tag)]
+
+multipartInputToItem :: Input -> Text
+multipartInputToItem (Input name val) =
+  "        - *" <> name <> "*: " <> "`" <> val <> "`"
+
+multipartFileToItem :: FileData tag -> Text
+multipartFileToItem (FileData name _ contentType _) =
+  "        - *" <> name <> "*, content-type: " <> "`" <> contentType <> "`"
+
+multipartSampleToDesc :: (Text, MultipartData tag) -> Text
+multipartSampleToDesc (desc, MultipartData inputs files) =
+  "- " <> desc <> "\n" <>
+  "    - textual inputs (any `<input>` type but file):\n" <>
+  foldMap (\input -> multipartInputToItem input <> "\n") inputs <>
+  "    - file inputs (any HTML input that looks like `<input type=\"file\" name=\"somefile\" />`):\n" <>
+  foldMap (\file -> multipartFileToItem file <> "\n") files
+
+toMultipartDescriptions
+  :: forall tag a.
+     ToMultipartSample tag a
+  => Proxy tag -> Proxy a -> [Text]
+toMultipartDescriptions _ proxyA = fmap multipartSampleToDesc samples
+  where
+    samples :: [(Text, MultipartData tag)]
+    samples = toMultipartSamples proxyA
+
+toMultipartNotes
+  :: ToMultipartSample tag a
+  => Int -> Proxy tag -> Proxy a -> DocNote
+toMultipartNotes maxSamples' proxyTag proxyA =
+  let sampleLines = take maxSamples' $ toMultipartDescriptions proxyTag proxyA
+      body =
+        [ "This endpoint takes `multipart/form-data` requests.  The following is " <>
+          "a list of sample requests:"
+        , foldMap (<> "\n") sampleLines
+        ]
+  in DocNote "Multipart Request Samples" $ fmap unpack body
+
+instance (HasDocs api, ToMultipartSample tag a) => HasDocs (MultipartForm tag a :> api) where
+  docsFor
+    :: Proxy (MultipartForm tag a :> api)
+    -> (Endpoint, Action)
+    -> DocOptions
+    -> API
+  docsFor _ (endpoint, action) opts =
+    let newAction =
+          action
+            & notes <>~
+                [ toMultipartNotes
+                    (view maxSamples opts)
+                    (Proxy :: Proxy tag)
+                    (Proxy :: Proxy a)
+                ]
+    in docsFor (Proxy :: Proxy api) (endpoint, newAction) opts
