@@ -425,34 +425,68 @@ instance HasLink sub => HasLink (MultipartForm a :> sub) where
   type MkLink (MultipartForm a :> sub) = MkLink sub
   toLink _ = toLink (Proxy :: Proxy sub)
 
+-- | The 'ToMultipartSample' class allows you to create sample 'MultipartData'
+-- inputs for your type for use with "Servant.Docs".  This is used by the
+-- 'HasDocs' instance for 'MultipartForm'.
+--
+-- Given the example 'User' type and 'FromMultipart' instance above, here is a
+-- corresponding 'ToMultipartSample' instance:
+--
+-- @
+--   data User = User { username :: Text, pic :: FilePath }
+--
+--   instance 'ToMultipartSample' 'Tmp' User where
+--     'toMultipartSamples' proxy =
+--       [ ( \"sample 1\"
+--         , 'MultipartData'
+--             [ 'Input' \"username\" \"Elvis Presley\" ]
+--             [ 'FileData'
+--                 \"pic\"
+--                 \"playing_guitar.jpeg\"
+--                 \"image/jpeg\"
+--                 \"/tmp/servant-multipart000.buf\"
+--             ]
+--         )
+--       ]
+-- @
 class ToMultipartSample tag a where
   toMultipartSamples :: Proxy a -> [(Text, MultipartData tag)]
 
+-- | Format an 'Input' into a markdown list item.
 multipartInputToItem :: Input -> Text
 multipartInputToItem (Input name val) =
   "        - *" <> name <> "*: " <> "`" <> val <> "`"
 
+-- | Format a 'FileData' into a markdown list item.
 multipartFileToItem :: FileData tag -> Text
 multipartFileToItem (FileData name _ contentType _) =
   "        - *" <> name <> "*, content-type: " <> "`" <> contentType <> "`"
 
-multipartSampleToDesc :: (Text, MultipartData tag) -> Text
-multipartSampleToDesc (desc, MultipartData inputs files) =
+-- | Format a description and a sample 'MultipartData' into a markdown list
+-- item.
+multipartSampleToDesc
+  :: Text -- ^ The description for the sample.
+  -> MultipartData tag -- ^ The sample 'MultipartData'.
+  -> Text -- ^ A markdown list item.
+multipartSampleToDesc desc (MultipartData inputs files) =
   "- " <> desc <> "\n" <>
   "    - textual inputs (any `<input>` type but file):\n" <>
   foldMap (\input -> multipartInputToItem input <> "\n") inputs <>
   "    - file inputs (any HTML input that looks like `<input type=\"file\" name=\"somefile\" />`):\n" <>
   foldMap (\file -> multipartFileToItem file <> "\n") files
 
+-- | Format a list of samples generated with 'ToMultipartSample' into sections
+-- of markdown.
 toMultipartDescriptions
   :: forall tag a.
      ToMultipartSample tag a
   => Proxy tag -> Proxy a -> [Text]
-toMultipartDescriptions _ proxyA = fmap multipartSampleToDesc samples
+toMultipartDescriptions _ proxyA = fmap (uncurry multipartSampleToDesc) samples
   where
     samples :: [(Text, MultipartData tag)]
     samples = toMultipartSamples proxyA
 
+-- | Create a 'DocNote' that represents samples for this multipart input.
 toMultipartNotes
   :: ToMultipartSample tag a
   => Int -> Proxy tag -> Proxy a -> DocNote
@@ -465,6 +499,8 @@ toMultipartNotes maxSamples' proxyTag proxyA =
         ]
   in DocNote "Multipart Request Samples" $ fmap unpack body
 
+-- | Declare an instance of 'ToMultipartSample' for your 'MultipartForm' type
+-- to be able to use this 'HasDocs' instance.
 instance (HasDocs api, ToMultipartSample tag a) => HasDocs (MultipartForm tag a :> api) where
   docsFor
     :: Proxy (MultipartForm tag a :> api)
