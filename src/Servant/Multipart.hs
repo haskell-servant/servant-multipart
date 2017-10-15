@@ -1,5 +1,6 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -27,22 +28,28 @@ module Servant.Multipart
   , defaultTmpBackendOptions
   , Input(..)
   , FileData(..)
+  -- * servant-docs
+  , ToMultipartSample(..)
   ) where
 
+import Control.Lens ((<>~), (&), view)
 import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Resource
 import Data.ByteString.Lazy (ByteString)
+import Data.Foldable (foldMap)
 import Data.Function
 import Data.List (find)
 import Data.Maybe
-import Data.Text (Text)
+import Data.Monoid
+import Data.Text (Text, unpack)
 import Data.Text.Encoding (decodeUtf8)
 import Data.Typeable
 import Network.HTTP.Media ((//))
 import Network.Wai
 import Network.Wai.Parse
 import Servant
+import Servant.Docs
 import Servant.Server.Internal
 import System.Directory
 import System.IO
@@ -418,3 +425,96 @@ instance {-# OVERLAPPING #-}
 instance HasLink sub => HasLink (MultipartForm a :> sub) where
   type MkLink (MultipartForm a :> sub) = MkLink sub
   toLink _ = toLink (Proxy :: Proxy sub)
+
+-- | The 'ToMultipartSample' class allows you to create sample 'MultipartData'
+-- inputs for your type for use with "Servant.Docs".  This is used by the
+-- 'HasDocs' instance for 'MultipartForm'.
+--
+-- Given the example 'User' type and 'FromMultipart' instance above, here is a
+-- corresponding 'ToMultipartSample' instance:
+--
+-- @
+--   data User = User { username :: Text, pic :: FilePath }
+--
+--   instance 'ToMultipartSample' 'Tmp' User where
+--     'toMultipartSamples' proxy =
+--       [ ( \"sample 1\"
+--         , 'MultipartData'
+--             [ 'Input' \"username\" \"Elvis Presley\" ]
+--             [ 'FileData'
+--                 \"pic\"
+--                 \"playing_guitar.jpeg\"
+--                 \"image/jpeg\"
+--                 \"/tmp/servant-multipart000.buf\"
+--             ]
+--         )
+--       ]
+-- @
+class ToMultipartSample tag a where
+  toMultipartSamples :: Proxy a -> [(Text, MultipartData tag)]
+
+-- | Format an 'Input' into a markdown list item.
+multipartInputToItem :: Input -> Text
+multipartInputToItem (Input name val) =
+  "        - *" <> name <> "*: " <> "`" <> val <> "`"
+
+-- | Format a 'FileData' into a markdown list item.
+multipartFileToItem :: FileData tag -> Text
+multipartFileToItem (FileData name _ contentType _) =
+  "        - *" <> name <> "*, content-type: " <> "`" <> contentType <> "`"
+
+-- | Format a description and a sample 'MultipartData' into a markdown list
+-- item.
+multipartSampleToDesc
+  :: Text -- ^ The description for the sample.
+  -> MultipartData tag -- ^ The sample 'MultipartData'.
+  -> Text -- ^ A markdown list item.
+multipartSampleToDesc desc (MultipartData inputs files) =
+  "- " <> desc <> "\n" <>
+  "    - textual inputs (any `<input>` type but file):\n" <>
+  foldMap (\input -> multipartInputToItem input <> "\n") inputs <>
+  "    - file inputs (any HTML input that looks like `<input type=\"file\" name=\"somefile\" />`):\n" <>
+  foldMap (\file -> multipartFileToItem file <> "\n") files
+
+-- | Format a list of samples generated with 'ToMultipartSample' into sections
+-- of markdown.
+toMultipartDescriptions
+  :: forall tag a.
+     ToMultipartSample tag a
+  => Proxy tag -> Proxy a -> [Text]
+toMultipartDescriptions _ proxyA = fmap (uncurry multipartSampleToDesc) samples
+  where
+    samples :: [(Text, MultipartData tag)]
+    samples = toMultipartSamples proxyA
+
+-- | Create a 'DocNote' that represents samples for this multipart input.
+toMultipartNotes
+  :: ToMultipartSample tag a
+  => Int -> Proxy tag -> Proxy a -> DocNote
+toMultipartNotes maxSamples' proxyTag proxyA =
+  let sampleLines = take maxSamples' $ toMultipartDescriptions proxyTag proxyA
+      body =
+        [ "This endpoint takes `multipart/form-data` requests.  The following is " <>
+          "a list of sample requests:"
+        , foldMap (<> "\n") sampleLines
+        ]
+  in DocNote "Multipart Request Samples" $ fmap unpack body
+
+-- | Declare an instance of 'ToMultipartSample' for your 'MultipartForm' type
+-- to be able to use this 'HasDocs' instance.
+instance (HasDocs api, ToMultipartSample tag a) => HasDocs (MultipartForm tag a :> api) where
+  docsFor
+    :: Proxy (MultipartForm tag a :> api)
+    -> (Endpoint, Action)
+    -> DocOptions
+    -> API
+  docsFor _ (endpoint, action) opts =
+    let newAction =
+          action
+            & notes <>~
+                [ toMultipartNotes
+                    (view maxSamples opts)
+                    (Proxy :: Proxy tag)
+                    (Proxy :: Proxy a)
+                ]
+    in docsFor (Proxy :: Proxy api) (endpoint, newAction) opts
