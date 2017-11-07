@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE InstanceSigs #-}
@@ -252,6 +253,10 @@ instance ( FromMultipart tag a
 
   type ServerT (MultipartForm tag a :> sublayout) m =
     a -> ServerT sublayout m
+
+#if MIN_VERSION_servant_server(0,12,0)
+  hoistServerWithContext _ pc nt s = hoistServerWithContext (Proxy :: Proxy sublayout) pc nt . s
+#endif
 
   route Proxy config subserver =
     route psub config subserver'
