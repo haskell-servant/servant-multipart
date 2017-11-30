@@ -24,7 +24,9 @@ module Servant.Multipart
   , lookupFile
   , MultipartOptions(..)
   , defaultMultipartOptions
+  , MultipartBackend(..)
   , Tmp
+  , TmpBackendOptions(..)
   , Mem
   , defaultTmpBackendOptions
   , Input(..)
