@@ -36,26 +36,21 @@ module Servant.Multipart
   ) where
 
 import Control.Lens ((<>~), (&), view)
-import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Resource
-import Data.ByteString.Lazy (ByteString)
 import Data.Foldable (foldMap)
-import Data.Function
 import Data.List (find)
 import Data.Maybe
 import Data.Monoid
 import Data.Text (Text, unpack)
 import Data.Text.Encoding (decodeUtf8)
 import Data.Typeable
-import Network.HTTP.Media ((//))
 import Network.Wai
 import Network.Wai.Parse
 import Servant
 import Servant.Docs
 import Servant.Server.Internal
 import System.Directory
-import System.IO
 
 import qualified Data.ByteString      as SBS
 import qualified Data.ByteString.Lazy as LBS
