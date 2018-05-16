@@ -429,8 +429,8 @@ instance {-# OVERLAPPING #-}
          LookupContext cs a => LookupContext (a ': cs) a where
   lookupContext _ (c :. _) = Just c
 
-instance HasLink sub => HasLink (MultipartForm a :> sub) where
-  type MkLink (MultipartForm a :> sub) = MkLink sub
+instance HasLink sub => HasLink (MultipartForm tag a :> sub) where
+  type MkLink (MultipartForm tag a :> sub) = MkLink sub
   toLink _ = toLink (Proxy :: Proxy sub)
 
 -- | The 'ToMultipartSample' class allows you to create sample 'MultipartData'
