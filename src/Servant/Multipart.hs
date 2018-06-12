@@ -425,8 +425,13 @@ instance {-# OVERLAPPING #-}
   lookupContext _ (c :. _) = Just c
 
 instance HasLink sub => HasLink (MultipartForm tag a :> sub) where
+#if MIN_VERSION_servant(0,14,0)
+  type MkLink (MultipartForm tag a :> sub) r = MkLink sub r
+  toLink toA _ = toLink toA (Proxy :: Proxy sub)
+#else
   type MkLink (MultipartForm tag a :> sub) = MkLink sub
   toLink _ = toLink (Proxy :: Proxy sub)
+#endif
 
 -- | The 'ToMultipartSample' class allows you to create sample 'MultipartData'
 -- inputs for your type for use with "Servant.Docs".  This is used by the

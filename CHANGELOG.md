@@ -1,5 +1,10 @@
+0.11.2
+------
+
+- Support `servant-0.14`
+
 0.11.1
------
+------
 
 - Support `servant-0.13`
 - Export MultipartBackend and TmpBackendOptions
