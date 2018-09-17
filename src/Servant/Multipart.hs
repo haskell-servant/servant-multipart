@@ -12,6 +12,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE TypeApplications #-}
 -- | @multipart/form-data@ support for servant.
 --
 --   This is mostly useful for adding file upload support to
@@ -35,7 +36,7 @@ module Servant.Multipart
   , ToMultipartSample(..)
   ) where
 
-import Control.Lens ((<>~), (&), view)
+import Control.Lens ((<>~), (&), view, (.~))
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Resource
 import Data.Foldable (foldMap)
@@ -49,6 +50,7 @@ import Network.Wai
 import Network.Wai.Parse
 import Servant
 import Servant.Docs
+import Servant.Foreign
 import Servant.Server.Internal
 import System.Directory
 
@@ -525,3 +527,14 @@ instance (HasDocs api, ToMultipartSample tag a) => HasDocs (MultipartForm tag a 
                     (Proxy :: Proxy a)
                 ]
     in docsFor (Proxy :: Proxy api) (endpoint, newAction) opts
+
+instance (HasForeignType lang ftype a, HasForeign lang ftype api)
+      => HasForeign lang ftype (MultipartForm t a :> api) where
+  type Foreign ftype (MultipartForm t a :> api) = Foreign ftype api
+
+  foreignFor lang ftype Proxy req =
+    foreignFor lang ftype (Proxy @api) $
+      req & reqBody .~ Just t
+          & reqBodyIsJSON .~ False
+    where
+      t = typeFor lang ftype (Proxy @a)
