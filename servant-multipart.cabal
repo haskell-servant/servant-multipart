@@ -41,7 +41,8 @@ library
                 text >=1.2 && <1.3,
                 transformers >=0.3 && <0.6,
                 wai >= 3.2 && <3.3,
-                wai-extra >=3.0 && <3.1
+                wai-extra >=3.0 && <3.1,
+                servant-foreign
   default-language:    Haskell2010
 
 executable upload
