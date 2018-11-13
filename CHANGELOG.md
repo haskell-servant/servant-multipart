@@ -1,3 +1,9 @@
+0.11.3
+------
+
+- Add `HasForeign (MultipartForm t a :> api)` instance.
+  [#20](https://github.com/haskell-servant/servant-multipart/pull/20)
+
 0.11.2
 ------
 
