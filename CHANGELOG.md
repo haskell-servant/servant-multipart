@@ -1,3 +1,9 @@
+0.11.4
+------
+
+- Change `upload` to be test-suite
+- Support servant-0.16
+
 0.11.3
 ------
 
