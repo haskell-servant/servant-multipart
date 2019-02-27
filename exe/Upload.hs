@@ -6,13 +6,14 @@ import Control.Concurrent
 import Control.Monad
 import Control.Monad.IO.Class
 import Data.Text.Encoding (encodeUtf8)
-import Network (withSocketsDo)
+import Network.Socket (withSocketsDo)
 import Network.HTTP.Client hiding (Proxy)
 import Network.HTTP.Client.MultipartFormData
 import Network.Wai
 import Network.Wai.Handler.Warp
 import Servant
 import Servant.Multipart
+import System.Environment (getArgs)
 
 import qualified Data.ByteString.Lazy as LBS
 
@@ -49,14 +50,18 @@ startServer :: IO ()
 startServer = run 8080 (serve api upload)
 
 main :: IO ()
-main = withSocketsDo $ do
-  forkIO startServer
-  -- we fork the server in a separate thread and send a test
-  -- request to it from the main thread.
-  manager <- newManager defaultManagerSettings
-  req <- parseRequest "http://localhost:8080/"
-  resp <- flip httpLbs manager =<< formDataBody form req
-  print resp
+main = do
+  args <- getArgs
+  case args of
+    ("run":_) -> withSocketsDo $ do
+      forkIO startServer
+      -- we fork the server in a separate thread and send a test
+      -- request to it from the main thread.
+      manager <- newManager defaultManagerSettings
+      req <- parseRequest "http://localhost:8080/"
+      resp <- flip httpLbs manager =<< formDataBody form req
+      print resp
+    _ -> putStrLn "Pass run to run"
 
   where form =
           [ partBS "title" "World"
