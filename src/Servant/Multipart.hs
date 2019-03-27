@@ -32,27 +32,38 @@ module Servant.Multipart
   , defaultTmpBackendOptions
   , Input(..)
   , FileData(..)
+  -- * servant-client
+  , genBoundary
+  , ToMultipart(..)
+  , multipartToBody
   -- * servant-docs
   , ToMultipartSample(..)
   ) where
 
 import Control.Lens ((<>~), (&), view, (.~))
+import Control.Monad (replicateM)
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Resource
-import Data.Foldable (foldMap)
+import Data.Array (listArray, (!))
+import Data.Foldable (foldMap, foldl')
 import Data.List (find)
 import Data.Maybe
 import Data.Monoid
 import Data.Text (Text, unpack)
-import Data.Text.Encoding (decodeUtf8)
+import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import Data.Typeable
+import Network.HTTP.Media.MediaType ((//), (/:))
 import Network.Wai
 import Network.Wai.Parse
 import Servant
+import Servant.Client.Core (HasClient(..), RequestBody(RequestBodySource), setRequestBody)
 import Servant.Docs
 import Servant.Foreign
 import Servant.Server.Internal
+import Servant.Types.SourceT (SourceT(..), source, StepT(..), fromActionStep)
 import System.Directory
+import System.IO (IOMode(ReadMode), withFile)
+import System.Random (getStdRandom, Random(randomR))
 
 import qualified Data.ByteString      as SBS
 import qualified Data.ByteString.Lazy as LBS
@@ -240,6 +251,29 @@ class FromMultipart tag a where
 instance FromMultipart tag (MultipartData tag) where
   fromMultipart = Just
 
+-- | Allows you to tell servant how to turn a more structured type
+--   into a 'MultipartData', which is what is actually sent by the
+--   client.
+--
+--   @
+--   data User = User { username :: Text, pic :: FilePath }
+--
+--   instance toMultipart Tmp User where
+--       toMultipart user = MultipartData [Input "username" $ username user]
+--                                        [FileData "pic"
+--                                                  (pic user)
+--                                                  "image/png"
+--                                                  (pic user)
+--                                        ]
+--   @
+class ToMultipart tag a where
+  -- | Given a value of type 'a', convert it to a
+  -- 'MultipartData'.
+  toMultipart :: a -> MultipartData tag
+
+instance ToMultipart tag (MultipartData tag) where
+  toMultipart = id
+
 -- | Upon seeing @MultipartForm a :> ...@ in an API type,
 ---  servant-server will hand a value of type @a@ to your handler
 --   assuming the request body's content type is
@@ -266,6 +300,100 @@ instance ( FromMultipart tag a
       multipartOpts = fromMaybe (defaultMultipartOptions pbak)
                     $ lookupContext popts config
       subserver' = addMultipartHandling pbak multipartOpts subserver
+
+-- | Upon seeing @MultipartForm a :> ...@ in an API type,
+--   servant-client will take a parameter of type @(LBS.ByteString, a)@,
+--   where the bytestring is the boundary to use (see 'genBoundary'), and
+--   replace the request body with the contents of the form.
+instance (ToMultipart tag a, HasClient m api, MultipartBackend tag)
+      => HasClient m (MultipartForm tag a :> api) where
+
+  type Client m (MultipartForm tag a :> api) = 
+    (LBS.ByteString, a) -> Client m api
+
+  clientWithRoute pm _ req (boundary, param) =
+      clientWithRoute pm (Proxy @api) $ setRequestBody newBody newMedia req
+    where
+      newBody = multipartToBody boundary $ toMultipart @tag param
+      newMedia = "multipart" // "form-data" /: ("boundary", LBS.toStrict boundary)
+
+  hoistClientMonad pm _ f cl = \a ->
+      hoistClientMonad pm (Proxy @api) f (cl a)
+
+-- | Generates a boundary to be used to separate parts of the multipart.
+-- Requires 'IO' because it is randomized.
+genBoundary :: IO LBS.ByteString
+genBoundary = LBS.pack 
+            . foldr (\x acc -> validChars ! x : acc) [] 
+            <$> indices
+  where
+    -- the standard allows up to 70 chars, but most implementations seem to be
+    -- in the range of 40-60, so we pick 55
+    indices = replicateM 55 . getStdRandom $ randomR (0,73)
+    -- '()+_,=./+?0123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz
+    validChars = listArray (0 :: Int, 73)
+                           [ 0x27, 0x28, 0x29, 0x2b, 0x5f, 0x2c, 0x3d, 0x2e
+                           , 0x2f, 0x2b, 0x3f, 0x30, 0x31, 0x32, 0x33, 0x34
+                           , 0x35, 0x36, 0x37, 0x38, 0x39, 0x3a, 0x41, 0x42
+                           , 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4a
+                           , 0x4b, 0x4c, 0x4d, 0x4e, 0x4f, 0x50, 0x51, 0x52
+                           , 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5a
+                           , 0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68
+                           , 0x69, 0x6a, 0x6b, 0x6c, 0x6d, 0x6e, 0x6f, 0x70
+                           , 0x71, 0x72, 0x73, 0x74, 0x75, 0x76, 0x77, 0x78
+                           , 0x79, 0x7a
+                           ]
+
+-- | Given a bytestring for the boundary, turns a `MultipartData` into
+-- a 'RequestBody'
+multipartToBody :: forall tag. 
+                MultipartBackend tag
+                => LBS.ByteString
+                -> MultipartData tag
+                -> RequestBody
+multipartToBody boundary mp = RequestBodySource $ files' <> source ["--", boundary, "--"]
+  where
+    -- at time of writing no Semigroup or Monoid instance exists for SourceT and StepT
+    -- in releases of Servant; they are in master though
+    (SourceT l) <> (SourceT r) = SourceT $ \k ->
+                                           l $ \lstep ->
+                                           r $ \rstep ->
+                                           k (appendStep lstep rstep)
+    appendStep Stop        r = r
+    appendStep (Error err) _ = Error err
+    appendStep (Skip s)    r = appendStep s r
+    appendStep (Yield x s) r = Yield x (appendStep s r)
+    appendStep (Effect ms) r = Effect $ (flip appendStep r <$> ms)
+    mempty = SourceT ($ Stop)
+    crlf = "\r\n"
+    lencode = LBS.fromStrict . encodeUtf8
+    renderInput input = renderPart (lencode . iName $ input) 
+                                   "text/plain"
+                                   ""
+                                   (source . pure . lencode . iValue $ input)
+    inputs' = foldl' (\acc x -> acc <> renderInput x) mempty (inputs mp)
+    renderFile :: FileData tag -> SourceIO LBS.ByteString
+    renderFile file = renderPart (lencode . fdInputName $ file)
+                                 (lencode . fdFileCType $ file)
+                                 ((flip mappend) "\"" . mappend "; filename=\""
+                                                      . lencode
+                                                      . fdFileName $ file)
+                                 (loadFile (Proxy @tag) . fdPayload $ file)
+    files' = foldl' (\acc x -> acc <> renderFile x) inputs' (files mp)
+    renderPart name contentType extraParams payload =
+      source [ "--"
+             , boundary
+             , crlf
+             , "Content-Disposition: form-data; name=\""
+             , name
+             , "\""
+             , extraParams
+             , crlf
+             , "Content-Type: "
+             , contentType
+             , crlf
+             , crlf
+             ] <> payload <> source [crlf]
 
 -- Try and extract the request body as multipart/form-data,
 -- returning the data as well as the resourcet InternalState
@@ -353,6 +481,8 @@ class MultipartBackend tag where
             -> IO SBS.ByteString
             -> IO (MultipartResult tag)
 
+    loadFile :: Proxy tag -> MultipartResult tag -> SourceIO LBS.ByteString
+
     defaultBackendOptions :: Proxy tag -> MultipartBackendOptions tag
 
 -- | Tag for data stored as a temporary file
@@ -366,6 +496,13 @@ instance MultipartBackend Tmp where
     type MultipartBackendOptions Tmp = TmpBackendOptions
 
     defaultBackendOptions _ = defaultTmpBackendOptions
+    -- streams the file from disk 
+    loadFile _ fp =
+        SourceT $ \k ->
+        withFile fp ReadMode $ \hdl ->
+        k (readHandle hdl)
+      where
+        readHandle hdl = fromActionStep LBS.null (LBS.hGet hdl 4096)
     backend _ opts = tmpBackend
       where
         tmpBackend = tempFileBackEndOpts (getTmpDir opts) (filenamePat opts)
@@ -375,6 +512,7 @@ instance MultipartBackend Mem where
     type MultipartBackendOptions Mem = ()
 
     defaultBackendOptions _ = ()
+    loadFile _ = source . pure
     backend _ opts _ = lbsBackEnd
 
 -- | Configuration for the temporary file based backend.
