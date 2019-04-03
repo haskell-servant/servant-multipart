@@ -124,9 +124,6 @@ script:
   # Constraint set network-3.0
   - ${CABAL} new-build -w ${HC} --disable-tests --disable-benchmarks  --constraint='network == 3.0.*' all
 
-  # Constraint set servant-0.15
-  - ${CABAL} new-build -w ${HC} --disable-tests --disable-benchmarks  --constraint='servant ==0.15.*' all
-
   # Constraint set servant-0.16
   - ${CABAL} new-build -w ${HC} --disable-tests --disable-benchmarks  --constraint='servant ==0.16.*' all
 

@@ -8,10 +8,6 @@ constraint-set network-3.0
   ghc: >= 8.0 && <8.8
   constraints: network == 3.0.*
 
-constraint-set servant-0.15
-  ghc: >= 8.0 && <8.8
-  constraints: servant ==0.15.*
-
 constraint-set servant-0.16
   ghc: >= 8.0 && <8.8
   constraints: servant ==0.16.*
