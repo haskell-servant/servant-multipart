@@ -1,19 +1,20 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeFamilies #-}
 
 import Control.Concurrent
 import Control.Monad
 import Control.Monad.IO.Class
-import Data.Text.Encoding (encodeUtf8)
 import Network.Socket (withSocketsDo)
 import Network.HTTP.Client hiding (Proxy)
-import Network.HTTP.Client.MultipartFormData
 import Network.Wai
 import Network.Wai.Handler.Warp
 import Servant
 import Servant.Multipart
 import System.Environment (getArgs)
+import Servant.Client (client, runClientM, mkClientEnv)
+import Servant.Client.Core (BaseUrl(BaseUrl), Scheme(Http))
 
 import qualified Data.ByteString.Lazy as LBS
 
@@ -22,8 +23,19 @@ import qualified Data.ByteString.Lazy as LBS
 -- pretty-prints the data it got to stdout before returning 0.
 type API = MultipartForm Mem (MultipartData Mem) :> Post '[JSON] Integer
 
+-- We want to load our file from disk, so we need to convert
+-- the 'Mem's in the serverside API to 'Tmp's
+type family MemToTmp api where
+  MemToTmp (a :<|> b) = MemToTmp a :<|> MemToTmp b
+  MemToTmp (a :> b) = MemToTmp a :> MemToTmp b
+  MemToTmp (MultipartForm Mem (MultipartData Mem)) = MultipartForm Tmp (MultipartData Tmp)
+  MemToTmp a = a
+
 api :: Proxy API
 api = Proxy
+
+clientApi :: Proxy (MemToTmp API)
+clientApi = Proxy
 
 -- The handler for our single endpoint.
 -- Its concrete type is:
@@ -58,14 +70,17 @@ main = do
       -- we fork the server in a separate thread and send a test
       -- request to it from the main thread.
       manager <- newManager defaultManagerSettings
-      req <- parseRequest "http://localhost:8080/"
-      resp <- flip httpLbs manager =<< formDataBody form req
+      boundary <- genBoundary
+      let burl = BaseUrl Http "localhost" 8080 ""
+          run cli = runClientM cli (mkClientEnv manager burl)
+      resp <- run $ client clientApi (boundary, form)
       print resp
     _ -> putStrLn "Pass run to run"
 
-  where form =
-          [ partBS "title" "World"
-          , partBS "text" $ encodeUtf8 "Hello"
-          , partFileSource "file" "./servant-multipart.cabal"
-          , partFileSource "otherfile" "./Setup.hs"
-          ]
+  where form = MultipartData [ Input "title" "World"
+                             , Input "text" "Hello"
+                             ]
+                             [ FileData "file" "./servant-multipart.cabal"
+                                        "text/plain" "./servant-multipart.cabal"
+                             , FileData "otherfile" "./Setup.hs" "text/plain" "./Setup.hs"
+                             ]

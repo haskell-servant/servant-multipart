@@ -155,8 +155,6 @@ script:
   - if [ $HCNUMVER -lt 80800 ] ; then ${CABAL} v2-build $WITHCOMPILER --disable-tests --disable-benchmarks --constraint='network == 2.8.*' all | color_cabal_output ; fi
   # Constraint set network-3.0
   - if [ $HCNUMVER -lt 80800 ] ; then ${CABAL} v2-build $WITHCOMPILER --disable-tests --disable-benchmarks --constraint='network == 3.0.*' all | color_cabal_output ; fi
-  # Constraint set servant-0.15
-  - if [ $HCNUMVER -lt 80800 ] ; then ${CABAL} v2-build $WITHCOMPILER --disable-tests --disable-benchmarks --constraint='servant ==0.15.*' all | color_cabal_output ; fi
   # Constraint set servant-0.16
   - if [ $HCNUMVER -lt 80800 ] ; then ${CABAL} v2-build $WITHCOMPILER --disable-tests --disable-benchmarks --constraint='servant ==0.16.*' all | color_cabal_output ; fi
 
