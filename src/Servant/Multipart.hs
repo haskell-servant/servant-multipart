@@ -323,18 +323,24 @@ instance (ToMultipart tag a, HasClient m api, MultipartBackend tag)
 -- | Generates a boundary to be used to separate parts of the multipart.
 -- Requires 'IO' because it is randomized.
 genBoundary :: IO LBS.ByteString
-genBoundary = LBS.pack 
-            . foldr (\x acc -> validChars ! x : acc) [] 
+genBoundary = LBS.pack
+            . map (validChars !)
             <$> indices
   where
     -- the standard allows up to 70 chars, but most implementations seem to be
     -- in the range of 40-60, so we pick 55
-    indices = replicateM 55 . getStdRandom $ randomR (0,73)
-    -- '()+_,=./+?0123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz
-    validChars = listArray (0 :: Int, 73)
-                           [ 0x27, 0x28, 0x29, 0x2b, 0x5f, 0x2c, 0x3d, 0x2e
-                           , 0x2f, 0x2b, 0x3f, 0x30, 0x31, 0x32, 0x33, 0x34
-                           , 0x35, 0x36, 0x37, 0x38, 0x39, 0x3a, 0x41, 0x42
+    indices = replicateM 55 . getStdRandom $ randomR (0,61)
+    -- Following Chromium on this one:
+    -- > The RFC 2046 spec says the alphanumeric characters plus the
+    -- > following characters are legal for boundaries:  '()+_,-./:=?
+    -- > However the following characters, though legal, cause some sites
+    -- > to fail: (),./:=+
+    -- https://github.com/chromium/chromium/blob/6efa1184771ace08f3e2162b0255c93526d1750d/net/base/mime_util.cc#L662-L670
+    validChars = listArray (0 :: Int, 61)
+                           -- 0-9
+                           [ 0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37
+                           , 0x38, 0x39, 0x41, 0x42
+                           -- A-Z, a-z
                            , 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4a
                            , 0x4b, 0x4c, 0x4d, 0x4e, 0x4f, 0x50, 0x51, 0x52
                            , 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5a
