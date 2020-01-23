@@ -1,3 +1,9 @@
+0.11.5
+------
+
+- Add `servant-client` support 
+- Support servant-0.17
+
 0.11.4
 ------
 
