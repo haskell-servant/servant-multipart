@@ -280,7 +280,7 @@ class ToMultipart tag a where
 instance ToMultipart tag (MultipartData tag) where
   toMultipart = id
 
-instance (ToMultipart tag a) => ToMultipart tag [a] where
+instance (ToMultipart tag a, Foldable t) => ToMultipart tag (t a) where
   toMultipart xs = foldMap toMultipart xs
 
 -- | Upon seeing @MultipartForm a :> ...@ in an API type,
