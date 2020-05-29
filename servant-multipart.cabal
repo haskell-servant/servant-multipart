@@ -44,6 +44,7 @@ library
     , servant-docs        >=0.10     && <0.15
     , servant-foreign     >=0.15     && <0.16
     , servant-server      >=0.16     && <0.18
+    , string-conversions  >=0.4.0.1  && <0.5
     , wai                 >=3.2.1.2  && <3.3
     , wai-extra           >=3.0.24.3 && <3.1
 

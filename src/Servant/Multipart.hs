@@ -49,6 +49,7 @@ import Data.Foldable (foldMap, foldl')
 import Data.List (find)
 import Data.Maybe
 import Data.Monoid
+import Data.String.Conversions (cs)
 import Data.Text (Text, unpack)
 import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import Data.Typeable
@@ -209,8 +210,11 @@ deriving instance Eq (MultipartResult tag) => Eq (FileData tag)
 deriving instance Show (MultipartResult tag) => Show (FileData tag)
 
 -- | Lookup a file input with the given @name@ attribute.
-lookupFile :: Text -> MultipartData tag -> Maybe (FileData tag)
-lookupFile iname = find ((==iname) . fdInputName) . files
+lookupFile :: Text -> MultipartData tag -> Either String (FileData tag)
+lookupFile iname =
+  maybe (Left $ "File " <> cs iname <> " not found") Right
+  . find ((==iname) . fdInputName)
+  . files
 
 -- | Representation for a textual input (any @\<input\>@ type but @file@).
 --
@@ -221,8 +225,11 @@ data Input = Input
   } deriving (Eq, Show)
 
 -- | Lookup a textual input with the given @name@ attribute.
-lookupInput :: Text -> MultipartData tag -> Maybe Text
-lookupInput iname = fmap iValue . find ((==iname) . iName) . inputs
+lookupInput :: Text -> MultipartData tag -> Either String Text
+lookupInput iname =
+  maybe (Left $ "Field " <> cs iname <> " not found") (Right . iValue)
+  . find ((==iname) . iName)
+  . inputs
 
 -- | 'MultipartData' is the type representing
 --   @multipart/form-data@ form inputs. Sometimes
@@ -246,10 +253,10 @@ class FromMultipart tag a where
   --   in a list of textual inputs and another list for
   --   files, try to extract a value of type @a@. When
   --   extraction fails, servant errors out with status code 400.
-  fromMultipart :: MultipartData tag -> Maybe a
+  fromMultipart :: MultipartData tag -> Either String a
 
 instance FromMultipart tag (MultipartData tag) where
-  fromMultipart = Just
+  fromMultipart = Right
 
 -- | Allows you to tell servant how to turn a more structured type
 --   into a 'MultipartData', which is what is actually sent by the
@@ -434,9 +441,9 @@ addMultipartHandling pTag opts subserver =
     bodyCheck () = do
       mpd <- check pTag opts :: DelayedIO (MultipartData tag)
       case fromMultipart mpd of
-        Nothing -> liftRouteResult $ FailFatal
-          err400 { errBody = "fromMultipart returned Nothing" }
-        Just x -> return x
+        Left msg -> liftRouteResult $ FailFatal
+          err400 { errBody = "Could not decode multipart mime body: " <> cs msg }
+        Right x -> return x
 
     contentTypeH req = fromMaybe "application/octet-stream" $
           lookup "Content-Type" (requestHeaders req)
