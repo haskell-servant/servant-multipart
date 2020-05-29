@@ -308,7 +308,7 @@ instance ( FromMultipart tag a
 instance (ToMultipart tag a, HasClient m api, MultipartBackend tag)
       => HasClient m (MultipartForm tag a :> api) where
 
-  type Client m (MultipartForm tag a :> api) = 
+  type Client m (MultipartForm tag a :> api) =
     (LBS.ByteString, a) -> Client m api
 
   clientWithRoute pm _ req (boundary, param) =
@@ -352,7 +352,7 @@ genBoundary = LBS.pack
 
 -- | Given a bytestring for the boundary, turns a `MultipartData` into
 -- a 'RequestBody'
-multipartToBody :: forall tag. 
+multipartToBody :: forall tag.
                 MultipartBackend tag
                 => LBS.ByteString
                 -> MultipartData tag
@@ -373,7 +373,7 @@ multipartToBody boundary mp = RequestBodySource $ files' <> source ["--", bounda
     mempty' = SourceT ($ Stop)
     crlf = "\r\n"
     lencode = LBS.fromStrict . encodeUtf8
-    renderInput input = renderPart (lencode . iName $ input) 
+    renderInput input = renderPart (lencode . iName $ input)
                                    "text/plain"
                                    ""
                                    (source . pure . lencode . iValue $ input)
@@ -502,7 +502,7 @@ instance MultipartBackend Tmp where
     type MultipartBackendOptions Tmp = TmpBackendOptions
 
     defaultBackendOptions _ = defaultTmpBackendOptions
-    -- streams the file from disk 
+    -- streams the file from disk
     loadFile _ fp =
         SourceT $ \k ->
         withFile fp ReadMode $ \hdl ->
