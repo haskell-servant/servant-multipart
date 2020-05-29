@@ -69,4 +69,4 @@ test-suite upload
 
 source-repository head
   type:     git
-  location: https://github.com/haskell-servent/servant-multipart
+  location: https://github.com/haskell-servant/servant-multipart
