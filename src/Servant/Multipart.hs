@@ -1,4 +1,5 @@
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE InstanceSigs #-}
@@ -19,6 +20,7 @@
 --   an API. See haddocks of 'MultipartForm' for an introduction.
 module Servant.Multipart
   ( MultipartForm
+  , MultipartForm'
   , MultipartData(..)
   , FromMultipart(..)
   , lookupInput
@@ -57,6 +59,7 @@ import Network.HTTP.Media.MediaType ((//), (/:))
 import Network.Wai
 import Network.Wai.Parse
 import Servant
+import Servant.API.Modifiers (FoldLenient)
 import Servant.Client.Core (HasClient(..), RequestBody(RequestBodySource), setRequestBody)
 import Servant.Docs
 import Servant.Foreign
@@ -151,7 +154,10 @@ import qualified Data.ByteString.Lazy as LBS
 --   after your handler has run, if they are still there. It is
 --   therefore recommended to move or copy them somewhere in your
 --   handler code if you need to keep the content around.
-data MultipartForm tag a
+type MultipartForm tag a = MultipartForm' '[] tag a
+
+-- | 'MultipartForm' which can be modified with 'Servant.API.Modifiers.Lenient'.
+data MultipartForm' (mods :: [*]) tag a
 
 -- | What servant gets out of a @multipart/form-data@ form submission.
 --
@@ -288,11 +294,12 @@ instance ToMultipart tag (MultipartData tag) where
 instance ( FromMultipart tag a
          , MultipartBackend tag
          , LookupContext config (MultipartOptions tag)
+         , SBoolI (FoldLenient mods)
          , HasServer sublayout config )
-      => HasServer (MultipartForm tag a :> sublayout) config where
+      => HasServer (MultipartForm' mods tag a :> sublayout) config where
 
-  type ServerT (MultipartForm tag a :> sublayout) m =
-    a -> ServerT sublayout m
+  type ServerT (MultipartForm' mods tag a :> sublayout) m =
+    If (FoldLenient mods) (Either String a) a -> ServerT sublayout m
 
 #if MIN_VERSION_servant_server(0,12,0)
   hoistServerWithContext _ pc nt s = hoistServerWithContext (Proxy :: Proxy sublayout) pc nt . s
@@ -306,16 +313,16 @@ instance ( FromMultipart tag a
       popts = Proxy :: Proxy (MultipartOptions tag)
       multipartOpts = fromMaybe (defaultMultipartOptions pbak)
                     $ lookupContext popts config
-      subserver' = addMultipartHandling pbak multipartOpts subserver
+      subserver' = addMultipartHandling @tag @a @mods pbak multipartOpts subserver
 
 -- | Upon seeing @MultipartForm a :> ...@ in an API type,
 --   servant-client will take a parameter of type @(LBS.ByteString, a)@,
 --   where the bytestring is the boundary to use (see 'genBoundary'), and
 --   replace the request body with the contents of the form.
 instance (ToMultipart tag a, HasClient m api, MultipartBackend tag)
-      => HasClient m (MultipartForm tag a :> api) where
+      => HasClient m (MultipartForm' mods tag a :> api) where
 
-  type Client m (MultipartForm tag a :> api) =
+  type Client m (MultipartForm' mods tag a :> api) =
     (LBS.ByteString, a) -> Client m api
 
   clientWithRoute pm _ req (boundary, param) =
@@ -427,10 +434,11 @@ check pTag tag = withRequest $ \request -> do
   where parseOpts = generalOptions tag
 
 -- Add multipart extraction support to a Delayed.
-addMultipartHandling :: forall tag multipart env a. (FromMultipart tag multipart, MultipartBackend tag)
+addMultipartHandling :: forall tag multipart (mods :: [*]) env a. (FromMultipart tag multipart, MultipartBackend tag)
+                     => SBoolI (FoldLenient mods)
                      => Proxy tag
                      -> MultipartOptions tag
-                     -> Delayed env (multipart -> a)
+                     -> Delayed env (If (FoldLenient mods) (Either String multipart) multipart -> a)
                      -> Delayed env a
 addMultipartHandling pTag opts subserver =
   addBodyCheck subserver contentCheck bodyCheck
@@ -440,10 +448,11 @@ addMultipartHandling pTag opts subserver =
 
     bodyCheck () = do
       mpd <- check pTag opts :: DelayedIO (MultipartData tag)
-      case fromMultipart mpd of
-        Left msg -> liftRouteResult $ FailFatal
+      case (sbool :: SBool (FoldLenient mods), fromMultipart @tag @multipart mpd) of
+        (SFalse, Left msg) -> liftRouteResult $ FailFatal
           err400 { errBody = "Could not decode multipart mime body: " <> cs msg }
-        Right x -> return x
+        (SFalse, Right x) -> return x
+        (STrue, res) -> return $ either (Left . cs) Right res
 
     contentTypeH req = fromMaybe "application/octet-stream" $
           lookup "Content-Type" (requestHeaders req)
