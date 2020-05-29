@@ -8,7 +8,6 @@ import Control.Monad
 import Control.Monad.IO.Class
 import Network.Socket (withSocketsDo)
 import Network.HTTP.Client hiding (Proxy)
-import Network.Wai
 import Network.Wai.Handler.Warp
 import Servant
 import Servant.Multipart
@@ -66,14 +65,14 @@ main = do
   args <- getArgs
   case args of
     ("run":_) -> withSocketsDo $ do
-      forkIO startServer
+      _ <- forkIO startServer
       -- we fork the server in a separate thread and send a test
       -- request to it from the main thread.
       manager <- newManager defaultManagerSettings
       boundary <- genBoundary
       let burl = BaseUrl Http "localhost" 8080 ""
-          run cli = runClientM cli (mkClientEnv manager burl)
-      resp <- run $ client clientApi (boundary, form)
+          runC cli = runClientM cli (mkClientEnv manager burl)
+      resp <- runC $ client clientApi (boundary, form)
       print resp
     _ -> putStrLn "Pass run to run"
 

@@ -47,8 +47,7 @@ import Control.Monad (replicateM)
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Resource
 import Data.Array (listArray, (!))
-import Data.Foldable (foldMap, foldl')
-import Data.List (find)
+import Data.List (find, foldl')
 import Data.Maybe
 import Data.Monoid
 import Data.String.Conversions (cs)
@@ -58,11 +57,11 @@ import Data.Typeable
 import Network.HTTP.Media.MediaType ((//), (/:))
 import Network.Wai
 import Network.Wai.Parse
-import Servant
+import Servant hiding (contentType)
 import Servant.API.Modifiers (FoldLenient)
 import Servant.Client.Core (HasClient(..), RequestBody(RequestBodySource), setRequestBody)
-import Servant.Docs
-import Servant.Foreign
+import Servant.Docs hiding (samples)
+import Servant.Foreign hiding (contentType)
 import Servant.Server.Internal
 import Servant.Types.SourceT (SourceT(..), source, StepT(..), fromActionStep)
 import System.Directory
@@ -535,7 +534,7 @@ instance MultipartBackend Mem where
 
     defaultBackendOptions _ = ()
     loadFile _ = source . pure
-    backend _ opts _ = lbsBackEnd
+    backend _ _ _ = lbsBackEnd
 
 -- | Configuration for the temporary file based backend.
 --
@@ -579,8 +578,8 @@ instance LookupContext '[] a where
 
 instance {-# OVERLAPPABLE #-}
          LookupContext cs a => LookupContext (c ': cs) a where
-  lookupContext p (c :. cs) =
-    lookupContext p cs
+  lookupContext p (_ :. cxts) =
+    lookupContext p cxts
 
 instance {-# OVERLAPPING #-}
          LookupContext cs a => LookupContext (a ': cs) a where
