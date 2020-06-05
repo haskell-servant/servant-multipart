@@ -1,4 +1,5 @@
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE InstanceSigs #-}
@@ -19,6 +20,7 @@
 --   an API. See haddocks of 'MultipartForm' for an introduction.
 module Servant.Multipart
   ( MultipartForm
+  , MultipartForm'
   , MultipartData(..)
   , FromMultipart(..)
   , lookupInput
@@ -45,20 +47,21 @@ import Control.Monad (replicateM)
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Resource
 import Data.Array (listArray, (!))
-import Data.Foldable (foldMap, foldl')
-import Data.List (find)
+import Data.List (find, foldl')
 import Data.Maybe
 import Data.Monoid
+import Data.String.Conversions (cs)
 import Data.Text (Text, unpack)
 import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import Data.Typeable
 import Network.HTTP.Media.MediaType ((//), (/:))
 import Network.Wai
 import Network.Wai.Parse
-import Servant
+import Servant hiding (contentType)
+import Servant.API.Modifiers (FoldLenient)
 import Servant.Client.Core (HasClient(..), RequestBody(RequestBodySource), setRequestBody)
-import Servant.Docs
-import Servant.Foreign
+import Servant.Docs hiding (samples)
+import Servant.Foreign hiding (contentType)
 import Servant.Server.Internal
 import Servant.Types.SourceT (SourceT(..), source, StepT(..), fromActionStep)
 import System.Directory
@@ -150,7 +153,10 @@ import qualified Data.ByteString.Lazy as LBS
 --   after your handler has run, if they are still there. It is
 --   therefore recommended to move or copy them somewhere in your
 --   handler code if you need to keep the content around.
-data MultipartForm tag a
+type MultipartForm tag a = MultipartForm' '[] tag a
+
+-- | 'MultipartForm' which can be modified with 'Servant.API.Modifiers.Lenient'.
+data MultipartForm' (mods :: [*]) tag a
 
 -- | What servant gets out of a @multipart/form-data@ form submission.
 --
@@ -209,8 +215,11 @@ deriving instance Eq (MultipartResult tag) => Eq (FileData tag)
 deriving instance Show (MultipartResult tag) => Show (FileData tag)
 
 -- | Lookup a file input with the given @name@ attribute.
-lookupFile :: Text -> MultipartData tag -> Maybe (FileData tag)
-lookupFile iname = find ((==iname) . fdInputName) . files
+lookupFile :: Text -> MultipartData tag -> Either String (FileData tag)
+lookupFile iname =
+  maybe (Left $ "File " <> cs iname <> " not found") Right
+  . find ((==iname) . fdInputName)
+  . files
 
 -- | Representation for a textual input (any @\<input\>@ type but @file@).
 --
@@ -221,8 +230,11 @@ data Input = Input
   } deriving (Eq, Show)
 
 -- | Lookup a textual input with the given @name@ attribute.
-lookupInput :: Text -> MultipartData tag -> Maybe Text
-lookupInput iname = fmap iValue . find ((==iname) . iName) . inputs
+lookupInput :: Text -> MultipartData tag -> Either String Text
+lookupInput iname =
+  maybe (Left $ "Field " <> cs iname <> " not found") (Right . iValue)
+  . find ((==iname) . iName)
+  . inputs
 
 -- | 'MultipartData' is the type representing
 --   @multipart/form-data@ form inputs. Sometimes
@@ -246,10 +258,10 @@ class FromMultipart tag a where
   --   in a list of textual inputs and another list for
   --   files, try to extract a value of type @a@. When
   --   extraction fails, servant errors out with status code 400.
-  fromMultipart :: MultipartData tag -> Maybe a
+  fromMultipart :: MultipartData tag -> Either String a
 
 instance FromMultipart tag (MultipartData tag) where
-  fromMultipart = Just
+  fromMultipart = Right
 
 -- | Allows you to tell servant how to turn a more structured type
 --   into a 'MultipartData', which is what is actually sent by the
@@ -281,11 +293,12 @@ instance ToMultipart tag (MultipartData tag) where
 instance ( FromMultipart tag a
          , MultipartBackend tag
          , LookupContext config (MultipartOptions tag)
+         , SBoolI (FoldLenient mods)
          , HasServer sublayout config )
-      => HasServer (MultipartForm tag a :> sublayout) config where
+      => HasServer (MultipartForm' mods tag a :> sublayout) config where
 
-  type ServerT (MultipartForm tag a :> sublayout) m =
-    a -> ServerT sublayout m
+  type ServerT (MultipartForm' mods tag a :> sublayout) m =
+    If (FoldLenient mods) (Either String a) a -> ServerT sublayout m
 
 #if MIN_VERSION_servant_server(0,12,0)
   hoistServerWithContext _ pc nt s = hoistServerWithContext (Proxy :: Proxy sublayout) pc nt . s
@@ -299,16 +312,16 @@ instance ( FromMultipart tag a
       popts = Proxy :: Proxy (MultipartOptions tag)
       multipartOpts = fromMaybe (defaultMultipartOptions pbak)
                     $ lookupContext popts config
-      subserver' = addMultipartHandling pbak multipartOpts subserver
+      subserver' = addMultipartHandling @tag @a @mods pbak multipartOpts subserver
 
 -- | Upon seeing @MultipartForm a :> ...@ in an API type,
 --   servant-client will take a parameter of type @(LBS.ByteString, a)@,
 --   where the bytestring is the boundary to use (see 'genBoundary'), and
 --   replace the request body with the contents of the form.
 instance (ToMultipart tag a, HasClient m api, MultipartBackend tag)
-      => HasClient m (MultipartForm tag a :> api) where
+      => HasClient m (MultipartForm' mods tag a :> api) where
 
-  type Client m (MultipartForm tag a :> api) = 
+  type Client m (MultipartForm' mods tag a :> api) =
     (LBS.ByteString, a) -> Client m api
 
   clientWithRoute pm _ req (boundary, param) =
@@ -352,7 +365,7 @@ genBoundary = LBS.pack
 
 -- | Given a bytestring for the boundary, turns a `MultipartData` into
 -- a 'RequestBody'
-multipartToBody :: forall tag. 
+multipartToBody :: forall tag.
                 MultipartBackend tag
                 => LBS.ByteString
                 -> MultipartData tag
@@ -373,7 +386,7 @@ multipartToBody boundary mp = RequestBodySource $ files' <> source ["--", bounda
     mempty' = SourceT ($ Stop)
     crlf = "\r\n"
     lencode = LBS.fromStrict . encodeUtf8
-    renderInput input = renderPart (lencode . iName $ input) 
+    renderInput input = renderPart (lencode . iName $ input)
                                    "text/plain"
                                    ""
                                    (source . pure . lencode . iValue $ input)
@@ -420,10 +433,11 @@ check pTag tag = withRequest $ \request -> do
   where parseOpts = generalOptions tag
 
 -- Add multipart extraction support to a Delayed.
-addMultipartHandling :: forall tag multipart env a. (FromMultipart tag multipart, MultipartBackend tag)
+addMultipartHandling :: forall tag multipart (mods :: [*]) env a. (FromMultipart tag multipart, MultipartBackend tag)
+                     => SBoolI (FoldLenient mods)
                      => Proxy tag
                      -> MultipartOptions tag
-                     -> Delayed env (multipart -> a)
+                     -> Delayed env (If (FoldLenient mods) (Either String multipart) multipart -> a)
                      -> Delayed env a
 addMultipartHandling pTag opts subserver =
   addBodyCheck subserver contentCheck bodyCheck
@@ -433,10 +447,11 @@ addMultipartHandling pTag opts subserver =
 
     bodyCheck () = do
       mpd <- check pTag opts :: DelayedIO (MultipartData tag)
-      case fromMultipart mpd of
-        Nothing -> liftRouteResult $ FailFatal
-          err400 { errBody = "fromMultipart returned Nothing" }
-        Just x -> return x
+      case (sbool :: SBool (FoldLenient mods), fromMultipart @tag @multipart mpd) of
+        (SFalse, Left msg) -> liftRouteResult $ FailFatal
+          err400 { errBody = "Could not decode multipart mime body: " <> cs msg }
+        (SFalse, Right x) -> return x
+        (STrue, res) -> return $ either (Left . cs) Right res
 
     contentTypeH req = fromMaybe "application/octet-stream" $
           lookup "Content-Type" (requestHeaders req)
@@ -502,7 +517,7 @@ instance MultipartBackend Tmp where
     type MultipartBackendOptions Tmp = TmpBackendOptions
 
     defaultBackendOptions _ = defaultTmpBackendOptions
-    -- streams the file from disk 
+    -- streams the file from disk
     loadFile _ fp =
         SourceT $ \k ->
         withFile fp ReadMode $ \hdl ->
@@ -519,7 +534,7 @@ instance MultipartBackend Mem where
 
     defaultBackendOptions _ = ()
     loadFile _ = source . pure
-    backend _ opts _ = lbsBackEnd
+    backend _ _ _ = lbsBackEnd
 
 -- | Configuration for the temporary file based backend.
 --
@@ -563,8 +578,8 @@ instance LookupContext '[] a where
 
 instance {-# OVERLAPPABLE #-}
          LookupContext cs a => LookupContext (c ': cs) a where
-  lookupContext p (c :. cs) =
-    lookupContext p cs
+  lookupContext p (_ :. cxts) =
+    lookupContext p cxts
 
 instance {-# OVERLAPPING #-}
          LookupContext cs a => LookupContext (a ': cs) a where
