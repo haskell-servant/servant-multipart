@@ -1,3 +1,10 @@
+0.11.6
+------
+
+- relax bounds for ghc810 #38
+- update haskell-ci #37
+- better parse errors #36
+
 0.11.5
 ------
 
