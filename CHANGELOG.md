@@ -1,7 +1,9 @@
-0.11.7
-------
+0.12
+----
 
 - support servant-0.18
+- version bump for breaking change in
+  [#36](https://github.com/haskell-servant/servant-multipart/pull/36)
 
 0.11.6
 ------
