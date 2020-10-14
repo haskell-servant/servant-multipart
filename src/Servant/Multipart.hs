@@ -293,6 +293,9 @@ instance ToMultipart tag (MultipartData tag) where
 instance ( FromMultipart tag a
          , MultipartBackend tag
          , LookupContext config (MultipartOptions tag)
+#if MIN_VERSION_servant_server(0,18,0)
+         , LookupContext config ErrorFormatters
+#endif
          , SBoolI (FoldLenient mods)
          , HasServer sublayout config )
       => HasServer (MultipartForm' mods tag a :> sublayout) config where
@@ -312,7 +315,7 @@ instance ( FromMultipart tag a
       popts = Proxy :: Proxy (MultipartOptions tag)
       multipartOpts = fromMaybe (defaultMultipartOptions pbak)
                     $ lookupContext popts config
-      subserver' = addMultipartHandling @tag @a @mods pbak multipartOpts subserver
+      subserver' = addMultipartHandling @tag @a @mods @config pbak multipartOpts config subserver
 
 -- | Upon seeing @MultipartForm a :> ...@ in an API type,
 --   servant-client will take a parameter of type @(LBS.ByteString, a)@,
@@ -433,28 +436,46 @@ check pTag tag = withRequest $ \request -> do
   where parseOpts = generalOptions tag
 
 -- Add multipart extraction support to a Delayed.
-addMultipartHandling :: forall tag multipart (mods :: [*]) env a. (FromMultipart tag multipart, MultipartBackend tag)
+addMultipartHandling :: forall tag multipart (mods :: [*]) config env a.
+                     ( FromMultipart tag multipart
+                     , MultipartBackend tag
+#if MIN_VERSION_servant_server(0,18,0)
+                     , LookupContext config ErrorFormatters
+#endif
+                     )
                      => SBoolI (FoldLenient mods)
                      => Proxy tag
                      -> MultipartOptions tag
+                     -> Context config
                      -> Delayed env (If (FoldLenient mods) (Either String multipart) multipart -> a)
                      -> Delayed env a
-addMultipartHandling pTag opts subserver =
+addMultipartHandling pTag opts _config subserver =
   addBodyCheck subserver contentCheck bodyCheck
   where
     contentCheck = withRequest $ \request ->
       fuzzyMultipartCTCheck (contentTypeH request)
 
-    bodyCheck () = do
+    bodyCheck () = withRequest $ \ request -> do
       mpd <- check pTag opts :: DelayedIO (MultipartData tag)
       case (sbool :: SBool (FoldLenient mods), fromMultipart @tag @multipart mpd) of
-        (SFalse, Left msg) -> liftRouteResult $ FailFatal
-          err400 { errBody = "Could not decode multipart mime body: " <> cs msg }
+        (SFalse, Left msg) -> liftRouteResult $ FailFatal $ formatError request msg
         (SFalse, Right x) -> return x
         (STrue, res) -> return $ either (Left . cs) Right res
 
     contentTypeH req = fromMaybe "application/octet-stream" $
           lookup "Content-Type" (requestHeaders req)
+
+    defaultFormatError msg = err400 { errBody = "Could not decode multipart mime body: " <> cs msg }
+#if MIN_VERSION_servant_server(0,18,0)
+    pFormatters = Proxy :: Proxy ErrorFormatters
+    rep = typeRep (Proxy :: Proxy MultipartForm')
+    formatError request =
+      case lookupContext pFormatters _config of
+        Nothing -> defaultFormatError
+        Just fmts -> bodyParserErrorFormatter fmts rep request
+#else
+    formatError _ = defaultFormatError
+#endif
 
 -- Check that the content type is one of:
 --   - application/x-www-form-urlencoded
