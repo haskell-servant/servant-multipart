@@ -1,5 +1,5 @@
 name:               servant-multipart
-version:            0.11.6
+version:            0.12
 synopsis:           multipart/form-data (e.g file upload) support for servant
 description:
   This package adds support for file upload to the servant ecosystem. It draws
