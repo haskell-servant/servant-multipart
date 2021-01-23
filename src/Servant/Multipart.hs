@@ -179,6 +179,12 @@ data MultipartData tag = MultipartData
   , files  :: [FileData tag]
   }
 
+instance Semigroup (MultipartData tag) where
+  d1 <> d2 = MultipartData (inputs d1 <> inputs d2) (files d1 <> files d2)
+
+instance Monoid (MultipartData tag) where
+  mempty = MultipartData [] []
+
 fromRaw :: forall tag. ([Network.Wai.Parse.Param], [File (MultipartResult tag)])
         -> MultipartData tag
 fromRaw (inputs, files) = MultipartData is fs
@@ -285,6 +291,9 @@ class ToMultipart tag a where
 
 instance ToMultipart tag (MultipartData tag) where
   toMultipart = id
+
+instance (ToMultipart tag a, Foldable t) => ToMultipart tag (t a) where
+  toMultipart xs = foldMap toMultipart xs
 
 -- | Upon seeing @MultipartForm a :> ...@ in an API type,
 ---  servant-server will hand a value of type @a@ to your handler
