@@ -45,6 +45,9 @@ import Control.Monad.IO.Class
 import Control.Monad.Trans.Resource
 import Data.List (find)
 import Data.Maybe
+#if !MIN_VERSION_base(4,11,0)
+import Data.Monoid ((<>))
+#endif
 import Data.String.Conversions (cs)
 import Data.Text (Text, unpack)
 import Data.Text.Encoding (decodeUtf8)

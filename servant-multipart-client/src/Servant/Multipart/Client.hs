@@ -29,6 +29,9 @@ import Servant.Multipart.API
 import Control.Monad (replicateM)
 import Data.Array (listArray, (!))
 import Data.List (foldl')
+#if !MIN_VERSION_base(4,11,0)
+import Data.Monoid ((<>))
+#endif
 import Data.Text.Encoding (encodeUtf8)
 import Data.Typeable
 import Network.HTTP.Media.MediaType ((//), (/:))
