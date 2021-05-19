@@ -32,13 +32,15 @@ import Data.List (foldl')
 #if !MIN_VERSION_base(4,11,0)
 import Data.Monoid ((<>))
 #endif
-import Data.Text.Encoding (encodeUtf8)
+import Data.Text.Encoding           (encodeUtf8)
 import Data.Typeable
 import Network.HTTP.Media.MediaType ((//), (/:))
 import Servant.API
-import Servant.Client.Core (HasClient(..), RequestBody(RequestBodySource), setRequestBody)
-import Servant.Types.SourceT (SourceT(..), StepT(..), source)
-import System.Random (getStdRandom, randomR)
+import Servant.Client.Core          (HasClient (..), RequestBody (RequestBodySource),
+                                     setRequestBody)
+import Servant.Types.SourceT        (SourceT (..), StepT (..), fromActionStep, source)
+import System.IO                    (IOMode (ReadMode), withFile)
+import System.Random                (getStdRandom, randomR)
 
 import qualified Data.ByteString.Lazy as LBS
 
@@ -46,7 +48,7 @@ import qualified Data.ByteString.Lazy as LBS
 --   servant-client will take a parameter of type @(LBS.ByteString, a)@,
 --   where the bytestring is the boundary to use (see 'genBoundary'), and
 --   replace the request body with the contents of the form.
-instance (ToMultipart tag a, HasClient m api, MultipartBackend tag)
+instance (ToMultipart tag a, HasClient m api, MultipartClient tag)
       => HasClient m (MultipartForm' mods tag a :> api) where
 
   type Client m (MultipartForm' mods tag a :> api) =
@@ -60,6 +62,21 @@ instance (ToMultipart tag a, HasClient m api, MultipartBackend tag)
 
   hoistClientMonad pm _ f cl = \a ->
       hoistClientMonad pm (Proxy @api) f (cl a)
+
+class MultipartClient tag where
+    loadFile :: Proxy tag -> MultipartResult tag -> SourceIO LBS.ByteString
+
+instance MultipartClient Tmp where
+    -- streams the file from disk
+    loadFile _ fp =
+        SourceT $ \k ->
+        withFile fp ReadMode $ \hdl ->
+        k (readHandle hdl)
+      where
+        readHandle hdl = fromActionStep LBS.null (LBS.hGet hdl 4096)
+
+instance MultipartClient Mem where
+    loadFile _ = source . pure
 
 -- | Generates a boundary to be used to separate parts of the multipart.
 -- Requires 'IO' because it is randomized.
@@ -93,8 +110,8 @@ genBoundary = LBS.pack
 
 -- | Given a bytestring for the boundary, turns a `MultipartData` into
 -- a 'RequestBody'
-multipartToBody :: forall tag.
-                MultipartBackend tag
+multipartToBody :: forall tag
+                .  MultipartClient tag
                 => LBS.ByteString
                 -> MultipartData tag
                 -> RequestBody

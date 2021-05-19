@@ -24,19 +24,17 @@ module Servant.Multipart.API
   , MultipartData(..)
   , ToMultipart(..)
   , FromMultipart(..)
-  , MultipartBackend(..)
+  , MultipartResult
   , Tmp
   , Mem
   , Input(..)
   , FileData(..)
   ) where
 
-import Control.Monad.Trans.Resource
 import Data.Text (Text)
 import Data.Typeable
 import Servant.API
 
-import qualified Data.ByteString      as SBS
 import qualified Data.ByteString.Lazy as LBS
 
 -- | Combinator for specifying a @multipart/form-data@ request
@@ -224,27 +222,15 @@ class ToMultipart tag a where
 instance ToMultipart tag (MultipartData tag) where
   toMultipart = id
 
-class MultipartBackend tag where
-    type MultipartResult tag :: *
-    type MultipartBackendOptions tag :: *
-
-    backend :: Proxy tag
-            -> MultipartBackendOptions tag
-            -> InternalState
-            -> ignored1
-            -> ignored2
-            -> IO SBS.ByteString
-            -> IO (MultipartResult tag)
-
-    loadFile :: Proxy tag -> MultipartResult tag -> SourceIO LBS.ByteString
-
-    defaultBackendOptions :: Proxy tag -> MultipartBackendOptions tag
-
 -- | Tag for data stored as a temporary file
 data Tmp
 
 -- | Tag for data stored in memory
 data Mem
+
+type family MultipartResult tag :: *
+type instance MultipartResult Tmp = FilePath
+type instance MultipartResult Mem = LBS.ByteString
 
 instance HasLink sub => HasLink (MultipartForm tag a :> sub) where
 #if MIN_VERSION_servant(0,14,0)

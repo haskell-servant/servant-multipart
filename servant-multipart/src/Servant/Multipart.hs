@@ -59,12 +59,9 @@ import Servant.API.Modifiers (FoldLenient)
 import Servant.Docs hiding (samples)
 import Servant.Foreign hiding (contentType)
 import Servant.Server.Internal
-import Servant.Types.SourceT (SourceT(..), source, fromActionStep)
 import System.Directory
-import System.IO (IOMode(ReadMode), withFile)
 
 import qualified Data.ByteString      as SBS
-import qualified Data.ByteString.Lazy as LBS
 
 -- | Lookup a textual input with the given @name@ attribute.
 lookupInput :: Text -> MultipartData tag -> Either String Text
@@ -95,6 +92,19 @@ fromRaw (inputs, files) = MultipartData is fs
                    (fileContent fileinfo)
 
         dec = decodeUtf8
+
+class MultipartBackend tag where
+    type MultipartBackendOptions tag :: *
+
+    backend :: Proxy tag
+            -> MultipartBackendOptions tag
+            -> InternalState
+            -> ignored1
+            -> ignored2
+            -> IO SBS.ByteString
+            -> IO (MultipartResult tag)
+
+    defaultBackendOptions :: Proxy tag -> MultipartBackendOptions tag
 
 -- | Upon seeing @MultipartForm a :> ...@ in an API type,
 ---  servant-server will hand a value of type @a@ to your handler
@@ -222,27 +232,17 @@ data MultipartOptions tag = MultipartOptions
   }
 
 instance MultipartBackend Tmp where
-    type MultipartResult Tmp = FilePath
     type MultipartBackendOptions Tmp = TmpBackendOptions
 
     defaultBackendOptions _ = defaultTmpBackendOptions
-    -- streams the file from disk
-    loadFile _ fp =
-        SourceT $ \k ->
-        withFile fp ReadMode $ \hdl ->
-        k (readHandle hdl)
-      where
-        readHandle hdl = fromActionStep LBS.null (LBS.hGet hdl 4096)
     backend _ opts = tmpBackend
       where
         tmpBackend = tempFileBackEndOpts (getTmpDir opts) (filenamePat opts)
 
 instance MultipartBackend Mem where
-    type MultipartResult Mem = LBS.ByteString
     type MultipartBackendOptions Mem = ()
 
     defaultBackendOptions _ = ()
-    loadFile _ = source . pure
     backend _ _ _ = lbsBackEnd
 
 -- | Configuration for the temporary file based backend.
