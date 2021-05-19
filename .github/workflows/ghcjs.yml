@@ -34,7 +34,7 @@ jobs:
     - name: Cabal update and freeze
       run: |
         cabal v2-update
-        cabal v2-freeze
+        cabal v2-freeze -w /opt/ghc/8.4.4/bin/ghc
 
     - uses: actions/cache@v2.1.3
       name: Cache ~/.cabal/store and dist-newstyle
