@@ -2,10 +2,8 @@ name:               servant-multipart-api
 version:            0.12
 synopsis:           multipart/form-data (e.g file upload) support for servant
 description:
-  This package adds support for file upload to the servant ecosystem. It draws
-  on ideas and code from several people who participated in the
-  (in)famous [ticket #133](https://github.com/haskell-servant/servant/issues/133) on
-  servant's issue tracker.
+  This package contains servant API types that support multiform upload, used by
+  servant-multipart and servant-multipart-client for backend/client implementation.
 
 homepage:           https://github.com/haskell-servant/servant-multipart#readme
 license:            BSD3

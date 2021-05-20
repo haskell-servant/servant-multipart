@@ -14,7 +14,9 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE TypeApplications #-}
--- | @multipart/form-data@ support for servant.
+-- | @multipart/form-data@ Servant API support for servant.
+--   see servant-multipart and servant-multipart-client for server- and client-
+--   definitions.
 --
 --   This is mostly useful for adding file upload support to
 --   an API. See haddocks of 'MultipartForm' for an introduction.
