@@ -61,3 +61,6 @@ executable server
     , servant-multipart
     , servant-server
     , warp
+
+  if impl(ghcjs)
+    buildable: false
