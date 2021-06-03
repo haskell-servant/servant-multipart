@@ -63,4 +63,4 @@ executable server
     , warp
 
   if impl(ghcjs)
-    buildable: false
+    buildable: False
