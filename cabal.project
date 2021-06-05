@@ -1,0 +1,6 @@
+packages:
+  servant-multipart
+  servant-multipart-api
+  servant-multipart-client
+tests: True
+run-tests: True
