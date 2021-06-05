@@ -1,3 +1,9 @@
+0.12.1
+------
+
+- split package into api, server and client parts
+  [#51](https://github.com/haskell-servant/servant-multipart/pull/51)
+
 0.12
 ----
 

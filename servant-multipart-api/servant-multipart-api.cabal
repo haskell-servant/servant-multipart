@@ -1,5 +1,5 @@
 name:               servant-multipart-api
-version:            0.12
+version:            0.12.1
 synopsis:           multipart/form-data (e.g file upload) support for servant
 description:
   This package contains servant API types that support multiform upload, used by
