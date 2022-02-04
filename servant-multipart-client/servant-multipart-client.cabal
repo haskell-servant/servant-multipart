@@ -14,7 +14,11 @@ category:           Web, Servant
 build-type:         Simple
 cabal-version:      >=1.10
 extra-source-files: CHANGELOG.md
-tested-with: GHC ==8.0.2 || ==8.2.2 || ==8.4.4 || ==8.6.5 || ==8.8.4 || ==8.10.4
+tested-with:
+  GHC ==8.6.5
+   || ==8.8.4
+   || ==8.10.7
+   || ==9.0.2
 
 library
   default-language: Haskell2010
@@ -33,8 +37,8 @@ library
   build-depends:
       servant-multipart-api == 0.12.*
     , http-media          >=0.7.1.3  && <0.9
-    , servant             >=0.16     && <0.19
-    , servant-client-core >=0.16     && <0.19
+    , servant             >=0.16     && <0.20
+    , servant-client-core >=0.16     && <0.20
 
 executable upload
   hs-source-dirs:   exe
