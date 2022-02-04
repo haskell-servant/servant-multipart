@@ -37,6 +37,11 @@ library
   build-depends:
       servant             >=0.16     && <0.20
 
+  -- servant-0.19 dropped support for GHC-8.4 (latest GHCJS version),
+  -- due to QuantifiedConstraints
+  if impl(ghcjs)
+      servant             >=0.16     && <0.19
+
 source-repository head
   type:     git
   location: https://github.com/haskell-servant/servant-multipart
