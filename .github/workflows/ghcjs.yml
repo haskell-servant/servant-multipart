@@ -8,8 +8,8 @@ on:
 
 jobs:
   ghcjs:
-    name: ubuntu-18.04 / ghcjs 8.4
-    runs-on: "ubuntu-18.04"
+    name: ubuntu-20.04 / ghcjs 8.4
+    runs-on: "ubuntu-20.04"
 
     steps:
     - uses: actions/checkout@v2
@@ -20,6 +20,10 @@ jobs:
 
     - name: Install ghcjs and cabal
       run: |
+        sudo apt-get update -y
+        sudo apt-get install -y --no-install-recommends software-properties-common
+        # Needed to get nodejs and npm
+        sudo add-apt-repository -y universe
         # Default GitHub image dropped ppa:hvr/ghc, so we add it ourselves
         sudo add-apt-repository ppa:hvr/ghc
         sudo add-apt-repository ppa:hvr/ghcjs
