@@ -255,11 +255,3 @@ jobs:
         run: |
           if [ $((HCNUMVER < 81000)) -ne 0 ] ; then $CABAL v2-build $ARG_COMPILER --disable-tests --disable-benchmarks --constraint='servant ==0.17.*' --dependencies-only -j2 all ; fi
           if [ $((HCNUMVER < 81000)) -ne 0 ] ; then $CABAL v2-build $ARG_COMPILER --disable-tests --disable-benchmarks --constraint='servant ==0.17.*' all ; fi
-      - name: constraint set network-3.0
-        run: |
-          if [ $((HCNUMVER < 80800)) -ne 0 ] ; then $CABAL v2-build $ARG_COMPILER --disable-tests --disable-benchmarks --constraint='network == 3.0.*' --dependencies-only -j2 all ; fi
-          if [ $((HCNUMVER < 80800)) -ne 0 ] ; then $CABAL v2-build $ARG_COMPILER --disable-tests --disable-benchmarks --constraint='network == 3.0.*' all ; fi
-      - name: constraint set network-2.8
-        run: |
-          if [ $((HCNUMVER < 80800)) -ne 0 ] ; then $CABAL v2-build $ARG_COMPILER --disable-tests --disable-benchmarks --constraint='network == 2.8.*' --dependencies-only -j2 all ; fi
-          if [ $((HCNUMVER < 80800)) -ne 0 ] ; then $CABAL v2-build $ARG_COMPILER --disable-tests --disable-benchmarks --constraint='network == 2.8.*' all ; fi

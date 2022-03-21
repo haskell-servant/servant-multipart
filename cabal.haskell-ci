@@ -1,13 +1,5 @@
 branches: master
 
-constraint-set network-2.8
-  ghc: >= 8.0 && <8.8
-  constraints: network == 2.8.*
-
-constraint-set network-3.0
-  ghc: >= 8.0 && <8.8
-  constraints: network == 3.0.*
-
 constraint-set servant-0.17
   ghc: >= 8.0 && <8.10
   constraints: servant ==0.17.*
