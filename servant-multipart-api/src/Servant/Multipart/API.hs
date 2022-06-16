@@ -110,7 +110,7 @@ import qualified Data.ByteString.Lazy as LBS
 --   @
 --
 --   Note that the behavior of this combinator is configurable,
---   by using 'serveWith' from servant-server instead of 'serve',
+--   by using 'serveWithContext' from servant-server instead of 'serve',
 --   which takes an additional 'Context' argument. It simply is an
 --   heterogeneous list where you can for example store
 --   a value of type 'MultipartOptions' that has the configuration that
