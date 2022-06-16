@@ -116,7 +116,7 @@ import qualified Data.ByteString.Lazy as LBS
 --   a value of type 'MultipartOptions' that has the configuration that
 --   you want, which would then get picked up by servant-multipart.
 --
---   __Important__: as mentionned in the example above,
+--   __Important__: as mentioned in the example above,
 --   the file paths point to temporary files which get removed
 --   after your handler has run, if they are still there. It is
 --   therefore recommended to move or copy them somewhere in your
@@ -208,7 +208,7 @@ instance FromMultipart tag (MultipartData tag) where
 --   @
 --   data User = User { username :: Text, pic :: FilePath }
 --
---   instance toMultipart Tmp User where
+--   instance ToMultipart Tmp User where
 --       toMultipart user = MultipartData [Input "username" $ username user]
 --                                        [FileData "pic"
 --                                                  (pic user)
