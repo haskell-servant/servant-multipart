@@ -23,6 +23,7 @@ module Servant.Multipart
   , FromMultipart(..)
   , lookupInput
   , lookupFile
+  , LookupContext(..)
   , MultipartOptions(..)
   , defaultMultipartOptions
   , MultipartBackend(..)
