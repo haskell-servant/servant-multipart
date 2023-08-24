@@ -27,6 +27,7 @@ import Servant.Multipart.API
 import Control.Monad (replicateM)
 import Data.Array (listArray, (!))
 import Data.List (foldl')
+import Data.List.Compat (singleton)
 #if !MIN_VERSION_base(4,11,0)
 import Data.Monoid ((<>))
 #endif
@@ -74,7 +75,7 @@ instance MultipartClient Tmp where
         readHandle hdl = fromActionStep LBS.null (LBS.hGet hdl 4096)
 
 instance MultipartClient Mem where
-    loadFile _ = source . pure
+    loadFile _ = source . singleton
 
 -- | Generates a boundary to be used to separate parts of the multipart.
 -- Requires 'IO' because it is randomized.
@@ -132,7 +133,7 @@ multipartToBody boundary mp = RequestBodySource $ files' <> source ["--", bounda
     renderInput input = renderPart (lencode . iName $ input)
                                    "text/plain"
                                    ""
-                                   (source . pure . lencode . iValue $ input)
+                                   (source . singleton . lencode . iValue $ input)
     inputs' = foldl' (\acc x -> acc `mappend'` renderInput x) mempty' (inputs mp)
     renderFile :: FileData tag -> SourceIO LBS.ByteString
     renderFile file = renderPart (lencode . fdInputName $ file)
