@@ -74,7 +74,7 @@ instance MultipartClient Tmp where
         readHandle hdl = fromActionStep LBS.null (LBS.hGet hdl 4096)
 
 instance MultipartClient Mem where
-    loadFile _ = source . pure
+    loadFile _ = source . pure @[]
 
 -- | Generates a boundary to be used to separate parts of the multipart.
 -- Requires 'IO' because it is randomized.
@@ -132,7 +132,7 @@ multipartToBody boundary mp = RequestBodySource $ files' <> source ["--", bounda
     renderInput input = renderPart (lencode . iName $ input)
                                    "text/plain"
                                    ""
-                                   (source . pure . lencode . iValue $ input)
+                                   (source . pure @[] . lencode . iValue $ input)
     inputs' = foldl' (\acc x -> acc `mappend'` renderInput x) mempty' (inputs mp)
     renderFile :: FileData tag -> SourceIO LBS.ByteString
     renderFile file = renderPart (lencode . fdInputName $ file)
