@@ -39,7 +39,7 @@ library
   -- other dependencies
   build-depends:
       servant-multipart-api == 0.12.*
-    , lens                >=4.17     && <5.3
+    , lens                >=4.17     && <5.4
     , resourcet           >=1.2.2    && <1.4
     , servant             >=0.16     && <0.21
     , servant-docs        >=0.10     && <0.14
