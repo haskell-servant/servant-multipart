@@ -63,6 +63,7 @@ test-suite servant-multipart-test
     , string-conversions
     , tasty
     , tasty-wai
+    , tasty-hunit
     , text
 
 source-repository head
