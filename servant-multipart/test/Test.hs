@@ -14,6 +14,7 @@ import Network.HTTP.Types.Header (HeaderName, hContentType)
 
 import Test.Tasty
 import Test.Tasty.Wai
+import Test.Tasty.HUnit
 
 import Servant
 import Servant.Multipart
@@ -32,6 +33,57 @@ main = defaultMain $ testGroup "servant-multipart"
   , testGroup "strict handler with raw MultipartData"
       [ testWai testApp "correct body" testBlogPostRawHandler
       ]
+  , lookupTests
+  ]
+
+sampleFileData :: FileData Tmp
+sampleFileData = FileData "file" "doc1.pdf" "application/pdf" "payload1"
+
+lookupTests :: TestTree
+lookupTests = testGroup "Lookup function tests"
+  [ testCase "lookupAllInputs - found" $ do
+       let md = MultipartData [ Input "color" "red"
+                              , Input "color" "blue"
+                              ] []
+       lookupAllInputs "color" md @?= Right ["red", "blue"]
+
+  , testCase "lookupAllInputs - missing field" $ do
+       let md = MultipartData [ Input "color" "red"
+                              , Input "color" "blue"
+                              ] []
+       case lookupAllInputs "size" md of
+         Left err -> err @?= "Field size not found"
+         Right _  -> assertFailure "Expected a Left error for missing field"
+
+  , testCase "lookupAllFiles - found" $ do
+       let file1 = sampleFileData
+           file2 = FileData "file" "doc2.pdf" "application/pdf" "/tmp/doc2.buf" :: FileData Tmp
+           md = MultipartData [] [file1, file2]
+       lookupAllFiles "file" md @?= Right [file1, file2]
+
+  , testCase "lookupAllFiles - missing file" $ do
+       let file1 = sampleFileData
+           md = MultipartData [] [file1]
+       case lookupAllFiles "image" md of
+         Left err -> err @?= "File image not found"
+         Right _  -> assertFailure "Expected a Left error for missing file"
+
+  , testCase "lookupInputAs - parsed successfully" $ do
+       let md = MultipartData [ Input "age" "30" ] []
+       lookupInputAs @Int "age" md @?= Right 30
+
+  , testCase "lookupInputAs - missing input" $ do
+       let md = MultipartData [ Input "age" "30" ] []
+       case lookupInputAs @Bool "isAdmin" md of
+         Left err -> err @?= "Field isAdmin not found"
+         Right _  -> assertFailure "Expected failure on missing input"
+
+  , testCase "lookupAllInputsAs - parsing list of numbers" $ do
+       let md = MultipartData [ Input "nums" "1"
+                              , Input "nums" "2"
+                              , Input "nums" "3"
+                              ] []
+       lookupAllInputsAs @Int "nums" md @?= Right [1,2,3]
   ]
 
 data BlogPost
