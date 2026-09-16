@@ -39,7 +39,7 @@ library
 
   -- other dependencies
   build-depends:
-      servant             >=0.16     && <0.21
+      servant             >=0.20.3   && <0.21
 
   -- servant-0.19 dropped support for GHC-8.4 (latest GHCJS version),
   -- due to QuantifiedConstraints
