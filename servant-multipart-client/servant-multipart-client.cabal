@@ -41,13 +41,6 @@ library
     , servant             >=0.20.3   && <0.21
     , servant-client-core >=0.20.3   && <0.21
 
-  -- servant-0.19 dropped support for GHC-8.4 (latest GHCJS version),
-  -- due to QuantifiedConstraints
-  if impl(ghcjs)
-      build-depends:
-          servant             >=0.16     && <0.19
-        , servant-client-core >=0.16     && <0.19
-
 executable upload
   hs-source-dirs:   exe
   main-is:          Upload.hs
@@ -73,6 +66,3 @@ executable server
     , servant-multipart           <0.13
     , servant-server              <0.21
     , warp                        <3.5
-
-  if impl(ghcjs)
-    buildable: False
