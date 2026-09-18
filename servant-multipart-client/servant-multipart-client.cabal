@@ -54,12 +54,12 @@ executable upload
   default-language: Haskell2010
   build-depends:
       base
-    , http-client
+    , http-client                 <0.8
     , network            >=3.2 && <3.3
     , servant
     , servant-multipart-api
     , servant-multipart-client
-    , servant-client
+    , servant-client              <0.21
     , servant-client-core
 
 executable server
@@ -67,12 +67,12 @@ executable server
   main-is:          Server.hs
   default-language: Haskell2010
   build-depends:
-      base
-    , bytestring
+      base                        <5
+    , bytestring                  <0.13
     , network            >=3.2 && <3.3
-    , servant-multipart
-    , servant-server
-    , warp
+    , servant-multipart           <0.13
+    , servant-server              <0.21
+    , warp                        <3.5
 
   if impl(ghcjs)
     buildable: False
