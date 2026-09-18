@@ -28,7 +28,7 @@ library
 
   -- ghc boot libs
   build-depends:
-      array         >=0.5.5.0  && <0.6
+      array         >=0.5.4.0  && <0.6
     , base          >=4.16     && <5
     , bytestring    >=0.11     && <0.13
     , text          >=2.0      && <2.3
