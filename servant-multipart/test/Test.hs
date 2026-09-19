@@ -5,11 +5,11 @@
 {-# LANGUAGE TypeOperators         #-}
 
 import Data.ByteString           as BS (ByteString)
-import Data.ByteString.Lazy      as BSL (ByteString)
+import Data.ByteString.Lazy      as BSL (ByteString, toStrict)
 import Data.List                 (intersperse)
 import Data.Monoid
-import Data.String.Conversions   (cs)
 import Data.Text                 (Text)
+import Data.Text.Encoding        (decodeUtf8)
 import Network.HTTP.Types.Header (HeaderName, hContentType)
 
 import Test.Tasty
@@ -44,7 +44,7 @@ instance FromMultipart Mem BlogPost where
   fromMultipart md =
     BlogPost
       <$> lookupInput "title" md
-      <*> fmap (cs . fdPayload) (lookupFile "body" md)
+      <*> fmap (decodeUtf8 . BSL.toStrict . fdPayload) (lookupFile "body" md)
 
 type TestAPI
   =    "blogPostStrict" :> MultipartForm Mem BlogPost :> Post '[PlainText] Text

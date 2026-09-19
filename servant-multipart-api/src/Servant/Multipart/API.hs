@@ -36,8 +36,7 @@ module Servant.Multipart.API
   ) where
 
 import Data.List (find)
-import Data.Text (Text)
-import Data.String.Conversions (cs)
+import Data.Text (Text, unpack)
 import Data.Typeable
 import Servant.API
 
@@ -154,14 +153,14 @@ data MultipartData tag = MultipartData
 -- | Lookup a textual input with the given @name@ attribute.
 lookupInput :: Text -> MultipartData tag -> Either String Text
 lookupInput iname =
-  maybe (Left $ "Field " <> cs iname <> " not found") (Right . iValue)
+  maybe (Left $ "Field " <> unpack iname <> " not found") (Right . iValue)
   . find ((==iname) . iName)
   . inputs
 
 -- | Lookup a file input with the given @name@ attribute.
 lookupFile :: Text -> MultipartData tag -> Either String (FileData tag)
 lookupFile iname =
-  maybe (Left $ "File " <> cs iname <> " not found") Right
+  maybe (Left $ "File " <> unpack iname <> " not found") Right
   . find ((==iname) . fdInputName)
   . files
 

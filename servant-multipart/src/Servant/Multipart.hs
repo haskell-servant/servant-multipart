@@ -46,7 +46,6 @@ import Data.Maybe
 #if !MIN_VERSION_base(4,11,0)
 import Data.Monoid ((<>))
 #endif
-import Data.String.Conversions (cs)
 import Data.Text (Text, unpack)
 import Data.Text.Encoding (decodeUtf8)
 import Data.Typeable
@@ -59,7 +58,9 @@ import Servant.Foreign hiding (contentType)
 import Servant.Server.Internal
 import System.Directory
 
-import qualified Data.ByteString      as SBS
+import qualified Data.ByteString          as SBS
+import qualified Data.Text.Lazy           as TL
+import qualified Data.Text.Lazy.Encoding  as TLE
 
 fromRaw :: forall tag. ([Network.Wai.Parse.Param], [File (MultipartResult tag)])
         -> MultipartData tag
@@ -164,12 +165,12 @@ addMultipartHandling pTag opts _config subserver =
       case (sbool :: SBool (FoldLenient mods), fromMultipart @tag @multipart mpd) of
         (SFalse, Left msg) -> liftRouteResult $ FailFatal $ formatError request msg
         (SFalse, Right x) -> return x
-        (STrue, res) -> return $ either (Left . cs) Right res
+        (STrue, res) -> return res
 
     contentTypeH req = fromMaybe "application/octet-stream" $
           lookup "Content-Type" (requestHeaders req)
 
-    defaultFormatError msg = err400 { errBody = "Could not decode multipart mime body: " <> cs msg }
+    defaultFormatError msg = err400 { errBody = "Could not decode multipart mime body: " <> TLE.encodeUtf8 (TL.pack msg) }
 #if MIN_VERSION_servant_server(0,18,0)
     pFormatters = Proxy :: Proxy ErrorFormatters
     rep = typeRep (Proxy :: Proxy MultipartForm')

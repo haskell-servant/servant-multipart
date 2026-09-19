@@ -42,7 +42,6 @@ library
     , servant-docs        >=0.13     && <0.14
     , servant-foreign     >=0.16     && <0.17
     , servant-server      >=0.20.3   && <0.21
-    , string-conversions  >=0.4.0.1  && <0.5
     , wai                 >=3.2.5    && <3.3
     , wai-extra           >=3.1.18   && <3.2
 
@@ -57,7 +56,6 @@ test-suite servant-multipart-test
     , http-types
     , servant-multipart
     , servant-server
-    , string-conversions
     , tasty
     , tasty-wai
     , text
