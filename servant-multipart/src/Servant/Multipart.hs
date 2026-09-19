@@ -52,7 +52,7 @@ import Data.Maybe
 #if !MIN_VERSION_base(4,11,0)
 import Data.Monoid ((<>))
 #endif
-import Data.Text (Text, unpack)
+import Data.Text (Text, unpack) 
 import Data.Text.Encoding (decodeUtf8)
 import Data.Typeable
 import Network.Wai
@@ -117,7 +117,7 @@ lookupAllFiles iname mpd = [ f | f <- files mpd, fdInputName f == iname ]
 lookupInputAs :: FromHttpApiData a => Text -> MultipartData tag -> Either String a
 lookupInputAs iname mpd = do
   val <- lookupInput iname mpd
-  first cs $ parseQueryParam val
+  first unpack $ parseQueryParam val
 
 fromRaw :: forall tag. ([Network.Wai.Parse.Param], [File (MultipartResult tag)])
         -> MultipartData tag
@@ -139,7 +139,7 @@ fromRaw (inputs, files) = MultipartData is fs
 lookupAllInputsAs :: FromHttpApiData a => Text -> MultipartData tag -> Either String [a]
 lookupAllInputsAs iname mpd = do
   let vals = lookupAllInputs iname mpd
-  first cs $ mapM parseQueryParam vals
+  first unpack $ mapM parseQueryParam vals
 
 class MultipartBackend tag where
     type MultipartBackendOptions tag :: *
