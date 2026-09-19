@@ -45,28 +45,24 @@ lookupTests = testGroup "Lookup function tests"
        let md = MultipartData [ Input "color" "red"
                               , Input "color" "blue"
                               ] []
-       lookupAllInputs "color" md @?= Right ["red", "blue"]
+       lookupAllInputs "color" md @?= ["red", "blue"]
 
   , testCase "lookupAllInputs - missing field" $ do
        let md = MultipartData [ Input "color" "red"
                               , Input "color" "blue"
                               ] []
-       case lookupAllInputs "size" md of
-         Left err -> err @?= "Field size not found"
-         Right _  -> assertFailure "Expected a Left error for missing field"
+       length (lookupAllInputs "size" md) @?= 0
 
   , testCase "lookupAllFiles - found" $ do
        let file1 = sampleFileData
            file2 = FileData "file" "doc2.pdf" "application/pdf" "/tmp/doc2.buf" :: FileData Tmp
            md = MultipartData [] [file1, file2]
-       lookupAllFiles "file" md @?= Right [file1, file2]
+       lookupAllFiles "file" md @?= [file1, file2]
 
   , testCase "lookupAllFiles - missing file" $ do
        let file1 = sampleFileData
            md = MultipartData [] [file1]
-       case lookupAllFiles "image" md of
-         Left err -> err @?= "File image not found"
-         Right _  -> assertFailure "Expected a Left error for missing file"
+       length (lookupAllFiles "image" md) @?= 0
 
   , testCase "lookupInputAs - parsed successfully" $ do
        let md = MultipartData [ Input "age" "30" ] []

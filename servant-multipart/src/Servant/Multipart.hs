@@ -21,7 +21,6 @@ module Servant.Multipart
   , MultipartForm'
   , MultipartData(..)
   , FromMultipart(..)
-  , FromText (..)
   , lookupInput
   , lookupFile
   , lookupAllInputs
@@ -47,6 +46,7 @@ import Servant.Multipart.API
 import Control.Lens ((<>~), (&), view, (.~))
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Resource
+import Data.Bifunctor (first)
 import Data.List (find)
 import Data.Maybe
 #if !MIN_VERSION_base(4,11,0)
@@ -85,7 +85,7 @@ lookupFile iname =
 -- 
 -- This function returns a list of all values for inputs with the specified name.
 -- It is useful when handling forms that allow multiple inputs with the same name,
--- such as multiple select inputs or checkboxes. If no inputs are found, Left is returned
+-- such as multiple select inputs or checkboxes. 
 --
 -- Example:
 --
@@ -94,18 +94,14 @@ lookupFile iname =
 -- ["red", "blue"]
 -- >>> lookupAllInputs "size" mpd
 -- []
-lookupAllInputs :: Text -> MultipartData tag -> Either String [Text]
-lookupAllInputs iname mpd = 
-  let lst = [ val | (Input name val) <- inputs mpd, name == iname ]
-    in if null lst then Left $ "Field " <> cs iname <> " not found"
-       else Right lst
+lookupAllInputs :: Text -> MultipartData tag -> [Text]
+lookupAllInputs iname mpd = [ val | (Input name val) <- inputs mpd, name == iname ]
 
 -- | Lookup all file inputs with the given @name@ attribute.
 --
 -- This function returns a list of all files uploaded under the specified name.
 -- It is useful when handling forms that allow multiple file uploads with the same
--- name, such as file inputs with the @multiple@ attribute. If no files are found,
--- Left Missing field error message is returned.
+-- name, such as file inputs with the @multiple@ attribute. 
 --
 -- Example:
 --
@@ -116,61 +112,8 @@ lookupAllInputs iname mpd =
 --  FileData "file" "doc2.pdf" "application/pdf" "/tmp/doc2"]
 -- >>> lookupAllFiles "image" mpd
 -- []
-lookupAllFiles :: Text -> MultipartData tag -> Either String [FileData tag]
-lookupAllFiles iname mpd = 
-    let lst = [ f | f <- files mpd, fdInputName f == iname ]
-    in if null lst then Left $ "File " <> cs iname <> " not found"
-       else Right lst
-
--- | A type class for types that can be parsed from 'Text'.
-class FromText a where
-  fromText :: Text -> Either String a
-
--- Instance for Text (no parsing needed)
-instance FromText Text where
-  fromText = Right
-
--- Instance for Int
-instance FromText Int where
-  fromText t = case reads (unpack t) of
-    [(val, "")] -> Right val
-    _ -> Left $ "Could not parse as Int: " <> unpack t
-
--- Instance for Bool
-instance FromText Bool where
-  fromText t
-    | t == "true" || t == "1" = Right True
-    | t == "false" || t == "0" = Right False
-    | otherwise = Left $ "Could not parse as Bool: " <> unpack t
-
--- Instance for Double
-instance FromText Double where
-  fromText t = case reads (unpack t) of
-    [(val, "")] -> Right val
-    _ -> Left $ "Could not parse as Double: " <> unpack t
-
--- Instance for Integer
-instance FromText Integer where
-  fromText t =
-    case reads (unpack t) of
-      [(val, "")] -> Right val
-      _           -> Left $ "Could not parse as Integer: " <> unpack t
-
--- Instance for Float
-instance FromText Float where
-  fromText t =
-    case reads (unpack t) of
-      [(val, "")] -> Right val
-      _           -> Left $ "Could not parse as Float: " <> unpack t
-
--- Instance for Maybe a.
--- This implementation assumes that if the text is "null" or empty,
--- then we interpret it as Nothing; otherwise we try to parse it.
-instance FromText a => FromText (Maybe a) where
-  fromText t =
-    if t == "null" || t == ""
-      then Right Nothing
-      else fmap Just (fromText t)
+lookupAllFiles :: Text -> MultipartData tag -> [FileData tag]
+lookupAllFiles iname mpd = [ f | f <- files mpd, fdInputName f == iname ]
 
 -- | Lookup a textual input with the given @name@ attribute and parse it into the desired type.
 --
@@ -184,11 +127,10 @@ instance FromText a => FromText (Maybe a) where
 -- Right 30
 -- >>> lookupInputAs @Bool "isAdmin" mpd
 -- Left "Field isAdmin not found"
-lookupInputAs :: FromText a => Text -> MultipartData tag -> Either String a
-lookupInputAs iname mpd =
-  case lookupInput iname mpd of
-    Left err -> Left err
-    Right val -> fromText val
+lookupInputAs :: FromHttpApiData a => Text -> MultipartData tag -> Either String a
+lookupInputAs iname mpd = do
+  val <- lookupInput iname mpd
+  first cs $ parseQueryParam val
 
 fromRaw :: forall tag. ([Network.Wai.Parse.Param], [File (MultipartResult tag)])
         -> MultipartData tag
@@ -207,12 +149,10 @@ fromRaw (inputs, files) = MultipartData is fs
         dec = decodeUtf8
 
 -- | Lookup all textual inputs with the given @name@ attribute and parse them into the desired type.
-lookupAllInputsAs :: FromText a => Text -> MultipartData tag -> Either String [a]
+lookupAllInputsAs :: FromHttpApiData a => Text -> MultipartData tag -> Either String [a]
 lookupAllInputsAs iname mpd = do
-  let eVals = lookupAllInputs iname mpd
-  case eVals of
-    Left err -> Left err
-    Right vals -> mapM fromText vals
+  let vals = lookupAllInputs iname mpd
+  first cs $ mapM parseQueryParam vals
 
 class MultipartBackend tag where
     type MultipartBackendOptions tag :: *
