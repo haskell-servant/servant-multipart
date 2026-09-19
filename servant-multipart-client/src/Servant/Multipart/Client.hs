@@ -20,6 +20,7 @@ module Servant.Multipart.Client
   ( genBoundary
   , ToMultipart(..)
   , multipartToBody
+  , MultipartClient(..)
   ) where
 
 import Servant.Multipart.API

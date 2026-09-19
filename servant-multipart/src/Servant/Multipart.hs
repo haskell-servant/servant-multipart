@@ -39,6 +39,7 @@ module Servant.Multipart
   , FileData(..)
   -- * servant-docs
   , ToMultipartSample(..)
+  , LookupContext(..)
   ) where
 
 import Servant.Multipart.API
