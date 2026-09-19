@@ -31,9 +31,13 @@ module Servant.Multipart.API
   , Mem
   , Input(..)
   , FileData(..)
+  , lookupInput
+  , lookupFile
   ) where
 
+import Data.List (find)
 import Data.Text (Text)
+import Data.String.Conversions (cs)
 import Data.Typeable
 import Servant.API
 
@@ -146,6 +150,20 @@ data MultipartData tag = MultipartData
   { inputs :: [Input]
   , files  :: [FileData tag]
   }
+
+-- | Lookup a textual input with the given @name@ attribute.
+lookupInput :: Text -> MultipartData tag -> Either String Text
+lookupInput iname =
+  maybe (Left $ "Field " <> cs iname <> " not found") (Right . iValue)
+  . find ((==iname) . iName)
+  . inputs
+
+-- | Lookup a file input with the given @name@ attribute.
+lookupFile :: Text -> MultipartData tag -> Either String (FileData tag)
+lookupFile iname =
+  maybe (Left $ "File " <> cs iname <> " not found") Right
+  . find ((==iname) . fdInputName)
+  . files
 
 -- | Representation for an uploaded file, usually resulting from
 --   picking a local file for an HTML input that looks like

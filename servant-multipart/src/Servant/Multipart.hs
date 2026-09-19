@@ -42,7 +42,6 @@ import Servant.Multipart.API
 import Control.Lens ((<>~), (&), view, (.~))
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Resource
-import Data.List (find)
 import Data.Maybe
 #if !MIN_VERSION_base(4,11,0)
 import Data.Monoid ((<>))
@@ -61,20 +60,6 @@ import Servant.Server.Internal
 import System.Directory
 
 import qualified Data.ByteString      as SBS
-
--- | Lookup a textual input with the given @name@ attribute.
-lookupInput :: Text -> MultipartData tag -> Either String Text
-lookupInput iname =
-  maybe (Left $ "Field " <> cs iname <> " not found") (Right . iValue)
-  . find ((==iname) . iName)
-  . inputs
-
--- | Lookup a file input with the given @name@ attribute.
-lookupFile :: Text -> MultipartData tag -> Either String (FileData tag)
-lookupFile iname =
-  maybe (Left $ "File " <> cs iname <> " not found") Right
-  . find ((==iname) . fdInputName)
-  . files
 
 fromRaw :: forall tag. ([Network.Wai.Parse.Param], [File (MultipartResult tag)])
         -> MultipartData tag
