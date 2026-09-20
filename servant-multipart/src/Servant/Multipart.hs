@@ -76,11 +76,11 @@ import qualified Data.Text.Lazy.Encoding  as TLE
 --
 -- Example:
 --
--- >>> let mpd = MultipartData [Input "color" "red", Input "color" "blue"] []
--- >>> lookupAllInputs "color" mpd
--- ["red", "blue"]
--- >>> lookupAllInputs "size" mpd
--- []
+-- @
+-- let mpd = MultipartData [Input "color" "red", Input "color" "blue"] []
+-- lookupAllInputs "color" mpd == ["red", "blue"]
+-- lookupAllInputs "size"  mpd == []
+-- @
 lookupAllInputs :: Text -> MultipartData tag -> [Text]
 lookupAllInputs iname mpd = [ val | (Input name val) <- inputs mpd, name == iname ]
 
@@ -92,13 +92,13 @@ lookupAllInputs iname mpd = [ val | (Input name val) <- inputs mpd, name == inam
 --
 -- Example:
 --
--- >>> let mpd = MultipartData [] [FileData "file" "doc1.pdf" "application/pdf" "/tmp/doc1", 
---                                 FileData "file" "doc2.pdf" "application/pdf" "/tmp/doc2"]
--- >>> lookupAllFiles "file" mpd
--- [FileData "file" "doc1.pdf" "application/pdf" "/tmp/doc1", 
---  FileData "file" "doc2.pdf" "application/pdf" "/tmp/doc2"]
--- >>> lookupAllFiles "image" mpd
--- []
+-- @
+-- let file1 = FileData "file" "doc1.pdf" "application/pdf" "/tmp/doc1"
+--     file2 = FileData "file" "doc2.pdf" "application/pdf" "/tmp/doc2"
+--     mpd   = MultipartData [] [file1, file2] :: MultipartData Tmp
+-- lookupAllFiles "file"  mpd == [file1, file2]
+-- lookupAllFiles "image" mpd == []
+-- @
 lookupAllFiles :: Text -> MultipartData tag -> [FileData tag]
 lookupAllFiles iname mpd = [ f | f <- files mpd, fdInputName f == iname ]
 
@@ -109,11 +109,11 @@ lookupAllFiles iname mpd = [ f | f <- files mpd, fdInputName f == iname ]
 --
 -- Example:
 --
--- >>> let mpd = MultipartData [Input "age" "30"] []
--- >>> lookupInputAs @Int "age" mpd
--- Right 30
--- >>> lookupInputAs @Bool "isAdmin" mpd
--- Left "Field isAdmin not found"
+-- @
+-- let mpd = MultipartData [Input "age" "30"] []
+-- lookupInputAs "age"     mpd == Right (30 :: Int)
+-- lookupInputAs "isAdmin" mpd == Left "Field isAdmin not found"
+-- @
 lookupInputAs :: FromHttpApiData a => Text -> MultipartData tag -> Either String a
 lookupInputAs iname mpd = do
   val <- lookupInput iname mpd
@@ -136,6 +136,18 @@ fromRaw (inputs, files) = MultipartData is fs
         dec = decodeUtf8
 
 -- | Lookup all textual inputs with the given @name@ attribute and parse them into the desired type.
+--
+-- This function returns a list of parsed values for inputs with the specified name.
+-- If no inputs are found, an empty list is returned. If parsing fails for any value,
+-- an error message is returned.
+--
+-- Example:
+--
+-- @
+-- let mpd = MultipartData [Input "nums" "1", Input "nums" "2"] []
+-- lookupAllInputsAs "nums" mpd == Right [1, 2 :: Int]
+-- lookupAllInputsAs "size" mpd == Right ([] :: [Int])
+-- @
 lookupAllInputsAs :: FromHttpApiData a => Text -> MultipartData tag -> Either String [a]
 lookupAllInputsAs iname mpd = do
   let vals = lookupAllInputs iname mpd
