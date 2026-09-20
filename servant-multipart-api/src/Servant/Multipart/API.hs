@@ -150,6 +150,23 @@ data MultipartData tag = MultipartData
   , files  :: [FileData tag]
   }
 
+deriving instance Eq (MultipartResult tag) => Eq (MultipartData tag)
+deriving instance Show (MultipartResult tag) => Show (MultipartData tag)
+
+instance Semigroup (MultipartData tag) where
+  a <> b =
+    MultipartData
+      { inputs = inputs a <> inputs b
+      , files  = files a <> files b
+      }
+
+instance Monoid (MultipartData tag) where
+  mempty =
+    MultipartData
+      { inputs = []
+      , files  = []
+      }
+
 -- | Lookup a textual input with the given @name@ attribute.
 lookupInput :: Text -> MultipartData tag -> Either String Text
 lookupInput iname =
