@@ -72,7 +72,7 @@ import qualified Data.Text.Lazy.Encoding  as TLE
 -- 
 -- This function returns a list of all values for inputs with the specified name.
 -- It is useful when handling forms that allow multiple inputs with the same name,
--- such as multiple select inputs or checkboxes. 
+-- such as multiple select inputs or checkbox groups with explicit values. 
 --
 -- Example:
 --
@@ -104,8 +104,14 @@ lookupAllFiles iname mpd = [ f | f <- files mpd, fdInputName f == iname ]
 
 -- | Lookup a textual input with the given @name@ attribute and parse it into the desired type.
 --
--- This function returns the parsed value if the input exists and can be parsed successfully.
--- If the input is not found or parsing fails, it returns an error message.
+-- This function returns the parsed value if the input exists and can be parsed successfully
+-- using its 'FromHttpApiData' instance. If the input is not found or parsing fails, it returns
+-- an error message.
+--
+-- Note: This function requires the field to be present in the request. Standalone HTML boolean
+-- checkboxes (which submit @"on"@ when checked and are omitted by browsers when unchecked) are
+-- not directly supported by 'FromHttpApiData Bool'; check for presence with 'lookupInput' or
+-- 'lookupAllInputs' instead, or use a custom newtype with a 'FromHttpApiData' instance.
 --
 -- Example:
 --
@@ -137,7 +143,10 @@ fromRaw (inputs, files) = MultipartData is fs
 
 -- | Lookup all textual inputs with the given @name@ attribute and parse them into the desired type.
 --
--- This function returns a list of parsed values for inputs with the specified name.
+-- This function returns a list of parsed values for inputs with the specified name using their
+-- 'FromHttpApiData' instance. It is useful for forms with repeated fields, multiple select inputs,
+-- or checkbox groups sharing the same name with explicit values.
+--
 -- If no inputs are found, an empty list is returned. If parsing fails for any value,
 -- an error message is returned.
 --
