@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -283,10 +282,5 @@ type instance MultipartResult Tmp = FilePath
 type instance MultipartResult Mem = LBS.ByteString
 
 instance HasLink sub => HasLink (MultipartForm tag a :> sub) where
-#if MIN_VERSION_servant(0,14,0)
   type MkLink (MultipartForm tag a :> sub) r = MkLink sub r
   toLink toA _ = toLink toA (Proxy :: Proxy sub)
-#else
-  type MkLink (MultipartForm tag a :> sub) = MkLink sub
-  toLink _ = toLink (Proxy :: Proxy sub)
-#endif
