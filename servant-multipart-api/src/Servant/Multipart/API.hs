@@ -35,6 +35,7 @@ module Servant.Multipart.API
   , lookupFile
   ) where
 
+import Control.DeepSeq (NFData (rnf))
 import Data.List (find)
 import Data.Text (Text, unpack)
 import Data.Typeable
@@ -167,6 +168,9 @@ instance Monoid (MultipartData tag) where
       , files  = []
       }
 
+instance NFData (MultipartResult tag) => NFData (MultipartData tag) where
+  rnf (MultipartData is fs) = rnf is `seq` rnf fs
+
 -- | Lookup a textual input with the given @name@ attribute.
 lookupInput :: Text -> MultipartData tag -> Either String Text
 lookupInput iname =
@@ -200,6 +204,13 @@ data FileData tag = FileData
 deriving instance Eq (MultipartResult tag) => Eq (FileData tag)
 deriving instance Show (MultipartResult tag) => Show (FileData tag)
 
+-- | Note that at 'Tmp' this only forces the 'FilePath'. It makes no
+--   guarantees about the temporary file it names, which is still removed
+--   once the handler has run.
+instance NFData (MultipartResult tag) => NFData (FileData tag) where
+  rnf (FileData iname fname ctype payload) =
+    rnf iname `seq` rnf fname `seq` rnf ctype `seq` rnf payload
+
 -- | Representation for a textual input (any @\<input\>@ type but @file@).
 --
 --   @\<input name="foo" value="bar"\ />@ would appear as @'Input' "foo" "bar"@.
@@ -207,6 +218,9 @@ data Input = Input
   { iName  :: Text -- ^ @name@ attribute of the input
   , iValue :: Text -- ^ value given for that input
   } deriving (Eq, Show)
+
+instance NFData Input where
+  rnf (Input name value) = rnf name `seq` rnf value
 
 -- | 'MultipartData' is the type representing
 --   @multipart/form-data@ form inputs. Sometimes
