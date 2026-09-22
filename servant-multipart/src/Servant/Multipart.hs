@@ -22,6 +22,10 @@ module Servant.Multipart
   , FromMultipart(..)
   , lookupInput
   , lookupFile
+  , lookupAllInputs
+  , lookupAllFiles 
+  , lookupInputAs 
+  , lookupAllInputsAs 
   , MultipartOptions(..)
   , defaultMultipartOptions
   , MultipartBackend(..)
@@ -57,7 +61,6 @@ import System.Directory
 import qualified Data.ByteString          as SBS
 import qualified Data.Text.Lazy           as TL
 import qualified Data.Text.Lazy.Encoding  as TLE
-
 fromRaw :: forall tag. ([Network.Wai.Parse.Param], [File (MultipartResult tag)])
         -> MultipartData tag
 fromRaw (inputs, files) = MultipartData is fs
