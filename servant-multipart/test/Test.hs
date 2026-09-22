@@ -51,7 +51,7 @@ lookupTests = testGroup "Lookup function tests"
        let md = MultipartData [ Input "color" "red"
                               , Input "color" "blue"
                               ] []
-       length (lookupAllInputs "size" md) @?= 0
+       lookupAllInputs "size" md @?= []
 
   , testCase "lookupAllFiles - found" $ do
        let file1 = sampleFileData
