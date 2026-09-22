@@ -105,7 +105,9 @@ class MultipartBackend tag where
 -- | Upon seeing @MultipartForm a :> ...@ in an API type,
 ---  servant-server will hand a value of type @a@ to your handler
 --   assuming the request body's content type is
---   @multipart/form-data@ and the call to 'fromMultipart' succeeds.
+--   @multipart/form-data@, the form's names, values, file names and
+--   content types are valid UTF-8, and the call to 'fromMultipart'
+--   succeeds.
 instance ( FromMultipart tag a
          , MultipartBackend tag
          , LookupContext config (MultipartOptions tag)
