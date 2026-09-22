@@ -129,9 +129,22 @@ import qualified Data.ByteString.Lazy as LBS
 --   after your handler has run, if they are still there. It is
 --   therefore recommended to move or copy them somewhere in your
 --   handler code if you need to keep the content around.
+--
+--   __Important__: the input names, input values, file names and file
+--   content types of the submitted form must all be valid UTF-8, including
+--   those of the parts that your 'FromMultipart' instance ignores. A form
+--   that carries any other encoding is rejected with a 400 response before
+--   your handler runs, unless 'Servant.API.Modifiers.Lenient' is used. The
+--   contents of the uploaded files are not decoded and may be arbitrary
+--   bytes.
 type MultipartForm tag a = MultipartForm' '[] tag a
 
 -- | 'MultipartForm' which can be modified with 'Servant.API.Modifiers.Lenient'.
+--
+--   Under 'Servant.API.Modifiers.Lenient', the handler is passed an
+--   @'Either' 'String' a@ rather than the request being rejected, so it is
+--   handed the message from a failed 'fromMultipart' call, or from a form
+--   whose text is not valid UTF-8.
 data MultipartForm' (mods :: [*]) tag a
 
 -- | What servant gets out of a @multipart/form-data@ form submission.

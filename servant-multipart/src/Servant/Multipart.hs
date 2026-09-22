@@ -47,7 +47,7 @@ import Control.Monad.IO.Class
 import Control.Monad.Trans.Resource
 import Data.Maybe
 import Data.Text (Text, unpack)
-import Data.Text.Encoding (decodeUtf8)
+import Data.Text.Encoding (decodeUtf8')
 import Data.Typeable
 import Network.Wai
 import Network.Wai.Parse
@@ -62,20 +62,32 @@ import qualified Data.ByteString          as SBS
 import qualified Data.Text.Lazy           as TL
 import qualified Data.Text.Lazy.Encoding  as TLE
 fromRaw :: forall tag. ([Network.Wai.Parse.Param], [File (MultipartResult tag)])
-        -> MultipartData tag
-fromRaw (inputs, files) = MultipartData is fs
+        -> Either String (MultipartData tag)
+fromRaw (inputs, files) =
+  MultipartData <$> traverse toInput inputs <*> traverse toFile files
 
-  where is = map (\(name, val) -> Input (dec name) (dec val)) inputs
-        fs = map toFile files
+  where toInput (iname, val) =
+          Input <$> decInput "name" iname iname
+                <*> decInput "value" iname val
 
-        toFile :: File (MultipartResult tag) -> FileData tag
+        toFile :: File (MultipartResult tag) -> Either String (FileData tag)
         toFile (iname, fileinfo) =
-          FileData (dec iname)
-                   (dec $ fileName fileinfo)
-                   (dec $ fileContentType fileinfo)
-                   (fileContent fileinfo)
+          FileData <$> decFile "name" iname iname
+                   <*> decFile "file name" iname (fileName fileinfo)
+                   <*> decFile "content type" iname (fileContentType fileinfo)
+                   <*> pure (fileContent fileinfo)
 
-        dec = decodeUtf8
+        decInput = dec "input"
+        decFile  = dec "file input"
+
+        dec :: String -> String -> SBS.ByteString -> SBS.ByteString
+            -> Either String Text
+        dec kind part iname raw =
+          case decodeUtf8' raw of
+            Right text -> Right text
+            Left _     -> Left $
+              part <> " of " <> kind <> " " <> show iname
+                   <> " is not valid UTF-8"
 
 class MultipartBackend tag where
     type MultipartBackendOptions tag :: *
@@ -93,7 +105,9 @@ class MultipartBackend tag where
 -- | Upon seeing @MultipartForm a :> ...@ in an API type,
 ---  servant-server will hand a value of type @a@ to your handler
 --   assuming the request body's content type is
---   @multipart/form-data@ and the call to 'fromMultipart' succeeds.
+--   @multipart/form-data@, the form's names, values, file names and
+--   content types are valid UTF-8, and the call to 'fromMultipart'
+--   succeeds.
 instance ( FromMultipart tag a
          , MultipartBackend tag
          , LookupContext config (MultipartOptions tag)
@@ -124,7 +138,7 @@ instance ( FromMultipart tag a
 check :: MultipartBackend tag
       => Proxy tag
       -> MultipartOptions tag
-      -> DelayedIO (MultipartData tag)
+      -> DelayedIO (Either String (MultipartData tag))
 check pTag tag = withRequest $ \request -> do
   st <- liftResourceT getInternalState
   rawData <- liftIO
@@ -154,8 +168,8 @@ addMultipartHandling pTag opts config subserver =
       fuzzyMultipartCTCheck (contentTypeH request)
 
     bodyCheck () = withRequest $ \ request -> do
-      mpd <- check pTag opts :: DelayedIO (MultipartData tag)
-      case (sbool :: SBool (FoldLenient mods), fromMultipart @tag @multipart mpd) of
+      mpd <- check pTag opts :: DelayedIO (Either String (MultipartData tag))
+      case (sbool :: SBool (FoldLenient mods), mpd >>= fromMultipart @tag @multipart) of
         (SFalse, Left msg) -> liftRouteResult $ FailFatal $ formatError request msg
         (SFalse, Right x) -> return x
         (STrue, res) -> return res
