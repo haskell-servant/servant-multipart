@@ -38,6 +38,18 @@ library
   build-depends:
       servant             >=0.20.3   && <0.21
 
+test-suite servant-multipart-api-test
+  type:             exitcode-stdio-1.0
+  hs-source-dirs:   test
+  main-is:          Test.hs
+  default-language: Haskell2010
+  build-depends:
+      base
+    , servant-multipart-api
+    , tasty
+    , tasty-hunit
+    , text
+
 source-repository head
   type:     git
   location: https://github.com/haskell-servant/servant-multipart

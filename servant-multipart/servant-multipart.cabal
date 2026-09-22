@@ -58,7 +58,6 @@ test-suite servant-multipart-test
     , servant-server
     , tasty
     , tasty-wai
-    , tasty-hunit
     , text
 
 source-repository head

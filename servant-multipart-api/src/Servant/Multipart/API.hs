@@ -32,9 +32,14 @@ module Servant.Multipart.API
   , FileData(..)
   , lookupInput
   , lookupFile
+  , lookupAllInputs
+  , lookupAllFiles
+  , lookupInputAs
+  , lookupAllInputsAs
   ) where
 
 import Control.DeepSeq (NFData (rnf))
+import Data.Bifunctor (first)
 import Data.List (find)
 import Data.Text (Text, unpack)
 import Data.Typeable
@@ -171,6 +176,8 @@ instance NFData (MultipartResult tag) => NFData (MultipartData tag) where
   rnf (MultipartData is fs) = rnf is `seq` rnf fs
 
 -- | Lookup a textual input with the given @name@ attribute.
+--
+-- Takes linear time with respect to the number of inputs.
 lookupInput :: Text -> MultipartData tag -> Either String Text
 lookupInput iname =
   maybe (Left $ "Field " <> unpack iname <> " not found") (Right . iValue)
@@ -178,11 +185,99 @@ lookupInput iname =
   . inputs
 
 -- | Lookup a file input with the given @name@ attribute.
+--
+-- Takes linear time with respect to the number of files.
 lookupFile :: Text -> MultipartData tag -> Either String (FileData tag)
 lookupFile iname =
   maybe (Left $ "File " <> unpack iname <> " not found") Right
   . find ((==iname) . fdInputName)
   . files
+
+-- | Lookup all textual inputs with the given @name@ attribute.
+-- 
+-- Takes linear time with respect to the number of inputs.
+--
+-- This function returns a list of all values for inputs with the specified name.
+-- It is useful when handling forms that allow multiple inputs with the same name,
+-- such as multiple select inputs or checkbox groups with explicit values. 
+--
+-- Example:
+--
+-- @
+-- let mpd = MultipartData [Input "color" "red", Input "color" "blue"] []
+-- lookupAllInputs "color" mpd == ["red", "blue"]
+-- lookupAllInputs "size"  mpd == []
+-- @
+lookupAllInputs :: Text -> MultipartData tag -> [Text]
+lookupAllInputs iname mpd = [ val | (Input name val) <- inputs mpd, name == iname ]
+
+-- | Lookup all file inputs with the given @name@ attribute.
+--
+-- Takes linear time with respect to the number of files.
+--
+-- This function returns a list of all files uploaded under the specified name.
+-- It is useful when handling forms that allow multiple file uploads with the same
+-- name, such as file inputs with the @multiple@ attribute. 
+--
+-- Example:
+--
+-- @
+-- let file1 = FileData "file" "doc1.pdf" "application/pdf" "/tmp/doc1"
+--     file2 = FileData "file" "doc2.pdf" "application/pdf" "/tmp/doc2"
+--     mpd   = MultipartData [] [file1, file2] :: MultipartData Tmp
+-- lookupAllFiles "file"  mpd == [file1, file2]
+-- lookupAllFiles "image" mpd == []
+-- @
+lookupAllFiles :: Text -> MultipartData tag -> [FileData tag]
+lookupAllFiles iname mpd = [ f | f <- files mpd, fdInputName f == iname ]
+
+-- | Lookup a textual input with the given @name@ attribute and parse it into the desired type.
+--
+-- Takes linear time with respect to the number of inputs.
+--
+-- This function returns the parsed value if the input exists and can be parsed successfully
+-- using its 'FromHttpApiData' instance. If the input is not found or parsing fails, it returns
+-- an error message.
+--
+-- Note: This function requires the field to be present in the request. Standalone HTML boolean
+-- checkboxes (which submit @"on"@ when checked and are omitted by browsers when unchecked) are
+-- not directly supported by 'FromHttpApiData Bool'; check for presence with 'lookupInput' or
+-- 'lookupAllInputs' instead, or use a custom newtype with a 'FromHttpApiData' instance.
+--
+-- Example:
+--
+-- @
+-- let mpd = MultipartData [Input "age" "30"] []
+-- lookupInputAs "age"     mpd == Right (30 :: Int)
+-- lookupInputAs "isAdmin" mpd == Left "Field isAdmin not found"
+-- @
+lookupInputAs :: FromHttpApiData a => Text -> MultipartData tag -> Either String a
+lookupInputAs iname mpd = do
+  val <- lookupInput iname mpd
+  first unpack $ parseQueryParam val
+
+-- | Lookup all textual inputs with the given @name@ attribute and parse them into the desired type.
+--
+-- Takes linear time with respect to the number of inputs.
+--
+-- This function returns a list of parsed values for inputs with the specified name using their
+-- 'FromHttpApiData' instance. It is useful for forms with repeated fields, multiple select inputs,
+-- or checkbox groups sharing the same name with explicit values.
+--
+-- If no inputs are found, an empty list is returned. If parsing fails for any value,
+-- an error message is returned.
+--
+-- Example:
+--
+-- @
+-- let mpd = MultipartData [Input "nums" "1", Input "nums" "2"] []
+-- lookupAllInputsAs "nums" mpd == Right [1, 2 :: Int]
+-- lookupAllInputsAs "size" mpd == Right ([] :: [Int])
+-- @
+lookupAllInputsAs :: FromHttpApiData a => Text -> MultipartData tag -> Either String [a]
+lookupAllInputsAs iname mpd = do
+  let vals = lookupAllInputs iname mpd
+  first unpack $ mapM parseQueryParam vals
 
 -- | Representation for an uploaded file, usually resulting from
 --   picking a local file for an HTML input that looks like
