@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -49,10 +48,7 @@ import Control.Monad.Trans.Resource
 import Data.Bifunctor (first)
 import Data.List (find)
 import Data.Maybe
-#if !MIN_VERSION_base(4,11,0)
-import Data.Monoid ((<>))
-#endif
-import Data.Text (Text, unpack) 
+import Data.Text (Text, unpack)
 import Data.Text.Encoding (decodeUtf8)
 import Data.Typeable
 import Network.Wai
@@ -182,9 +178,7 @@ class MultipartBackend tag where
 instance ( FromMultipart tag a
          , MultipartBackend tag
          , LookupContext config (MultipartOptions tag)
-#if MIN_VERSION_servant_server(0,18,0)
          , LookupContext config ErrorFormatters
-#endif
          , SBoolI (FoldLenient mods)
          , HasServer sublayout config )
       => HasServer (MultipartForm' mods tag a :> sublayout) config where
@@ -192,9 +186,7 @@ instance ( FromMultipart tag a
   type ServerT (MultipartForm' mods tag a :> sublayout) m =
     If (FoldLenient mods) (Either String a) a -> ServerT sublayout m
 
-#if MIN_VERSION_servant_server(0,12,0)
   hoistServerWithContext _ pc nt s = hoistServerWithContext (Proxy :: Proxy sublayout) pc nt . s
-#endif
 
   route Proxy config subserver =
     route psub config subserver'
@@ -228,9 +220,7 @@ check pTag tag = withRequest $ \request -> do
 addMultipartHandling :: forall tag multipart (mods :: [*]) config env a.
                      ( FromMultipart tag multipart
                      , MultipartBackend tag
-#if MIN_VERSION_servant_server(0,18,0)
                      , LookupContext config ErrorFormatters
-#endif
                      )
                      => SBoolI (FoldLenient mods)
                      => Proxy tag
@@ -238,7 +228,7 @@ addMultipartHandling :: forall tag multipart (mods :: [*]) config env a.
                      -> Context config
                      -> Delayed env (If (FoldLenient mods) (Either String multipart) multipart -> a)
                      -> Delayed env a
-addMultipartHandling pTag opts _config subserver =
+addMultipartHandling pTag opts config subserver =
   addBodyCheck subserver contentCheck bodyCheck
   where
     contentCheck = withRequest $ \request ->
@@ -255,16 +245,12 @@ addMultipartHandling pTag opts _config subserver =
           lookup "Content-Type" (requestHeaders req)
 
     defaultFormatError msg = err400 { errBody = "Could not decode multipart mime body: " <> TLE.encodeUtf8 (TL.pack msg) }
-#if MIN_VERSION_servant_server(0,18,0)
     pFormatters = Proxy :: Proxy ErrorFormatters
     rep = typeRep (Proxy :: Proxy MultipartForm')
     formatError request =
-      case lookupContext pFormatters _config of
+      case lookupContext pFormatters config of
         Nothing -> defaultFormatError
         Just fmts -> bodyParserErrorFormatter fmts rep request
-#else
-    formatError _ = defaultFormatError
-#endif
 
 -- Check that the content type is one of:
 --   - application/x-www-form-urlencoded
