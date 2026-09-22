@@ -62,7 +62,7 @@ lookupTests = testGroup "Lookup function tests"
   , testCase "lookupAllFiles - missing file" $ do
        let file1 = sampleFileData
            md = MultipartData [] [file1]
-       length (lookupAllFiles "image" md) @?= 0
+       lookupAllFiles "image" md @?= []
 
   , testCase "lookupInputAs - parsed successfully" $ do
        let md = MultipartData [ Input "age" "30" ] []
