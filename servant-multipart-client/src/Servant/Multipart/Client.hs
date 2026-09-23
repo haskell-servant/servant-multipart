@@ -26,14 +26,13 @@ import Servant.Multipart.API
 
 import Control.Monad (replicateM)
 import Data.Array (listArray, (!))
-import Data.List (foldl')
 import Data.Text.Encoding           (encodeUtf8)
 import Data.Typeable
 import Network.HTTP.Media.MediaType ((//), (/:))
 import Servant.API
 import Servant.Client.Core          (HasClient (..), RequestBody (RequestBodySource),
                                      setRequestBody)
-import Servant.Types.SourceT        (SourceT (..), StepT (..), fromActionStep, source)
+import Servant.Types.SourceT        (SourceT (..), fromActionStep, source)
 import System.IO                    (IOMode (ReadMode), withFile)
 import System.Random                (getStdRandom, randomR)
 
@@ -110,35 +109,20 @@ multipartToBody :: forall tag
                 => LBS.ByteString
                 -> MultipartData tag
                 -> RequestBody
-multipartToBody boundary mp = RequestBodySource $ files' <> source ["--", boundary, "--"]
+multipartToBody boundary mp = RequestBodySource $
+    foldMap renderInput (inputs mp) <> foldMap renderFile (files mp) <> source ["--", boundary, "--"]
   where
-    -- at time of writing no Semigroup or Monoid instance exists for SourceT and StepT
-    -- in releases of Servant; they are in master though
-    (SourceT l) `mappend'` (SourceT r) = SourceT $ \k ->
-                                                   l $ \lstep ->
-                                                   r $ \rstep ->
-                                                   k (appendStep lstep rstep)
-    appendStep Stop        r = r
-    appendStep (Error err) _ = Error err
-    appendStep (Skip s)    r = appendStep s r
-    appendStep (Yield x s) r = Yield x (appendStep s r)
-    appendStep (Effect ms) r = Effect $ (flip appendStep r <$> ms)
-    mempty' = SourceT ($ Stop)
     crlf = "\r\n"
     lencode = LBS.fromStrict . encodeUtf8
     renderInput input = renderPart (lencode . iName $ input)
                                    "text/plain"
                                    ""
                                    (source . pure @[] . lencode . iValue $ input)
-    inputs' = foldl' (\acc x -> acc `mappend'` renderInput x) mempty' (inputs mp)
     renderFile :: FileData tag -> SourceIO LBS.ByteString
     renderFile file = renderPart (lencode . fdInputName $ file)
                                  (lencode . fdFileCType $ file)
-                                 ((flip mappend) "\"" . mappend "; filename=\""
-                                                      . lencode
-                                                      . fdFileName $ file)
+                                 ("; filename=\"" <> lencode (fdFileName file) <> "\"")
                                  (loadFile (Proxy @tag) . fdPayload $ file)
-    files' = foldl' (\acc x -> acc `mappend'` renderFile x) inputs' (files mp)
     renderPart name contentType extraParams payload =
       source [ "--"
              , boundary
@@ -152,4 +136,4 @@ multipartToBody boundary mp = RequestBodySource $ files' <> source ["--", bounda
              , contentType
              , crlf
              , crlf
-             ] `mappend'` payload `mappend'` source [crlf]
+             ] <> payload <> source [crlf]
