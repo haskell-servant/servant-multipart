@@ -358,9 +358,9 @@ toMultipartNotes maxSamples' proxyTag proxyA =
 
 -- | Declare an instance of 'ToMultipartSample' for your 'MultipartForm' type
 -- to be able to use this 'HasDocs' instance.
-instance (HasDocs api, ToMultipartSample tag a) => HasDocs (MultipartForm tag a :> api) where
+instance (HasDocs api, ToMultipartSample tag a) => HasDocs (MultipartForm' mods tag a :> api) where
   docsFor
-    :: Proxy (MultipartForm tag a :> api)
+    :: Proxy (MultipartForm' mods tag a :> api)
     -> (Endpoint, Action)
     -> DocOptions
     -> API
@@ -376,8 +376,8 @@ instance (HasDocs api, ToMultipartSample tag a) => HasDocs (MultipartForm tag a 
     in docsFor (Proxy :: Proxy api) (endpoint, newAction) opts
 
 instance (HasForeignType lang ftype a, HasForeign lang ftype api)
-      => HasForeign lang ftype (MultipartForm t a :> api) where
-  type Foreign ftype (MultipartForm t a :> api) = Foreign ftype api
+      => HasForeign lang ftype (MultipartForm' mods t a :> api) where
+  type Foreign ftype (MultipartForm' mods t a :> api) = Foreign ftype api
 
   foreignFor lang ftype Proxy req =
     foreignFor lang ftype (Proxy @api) $

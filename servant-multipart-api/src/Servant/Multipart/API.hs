@@ -389,6 +389,6 @@ type family MultipartResult tag :: *
 type instance MultipartResult Tmp = FilePath
 type instance MultipartResult Mem = LBS.ByteString
 
-instance HasLink sub => HasLink (MultipartForm tag a :> sub) where
-  type MkLink (MultipartForm tag a :> sub) r = MkLink sub r
+instance HasLink sub => HasLink (MultipartForm' mods tag a :> sub) where
+  type MkLink (MultipartForm' mods tag a :> sub) r = MkLink sub r
   toLink toA _ = toLink toA (Proxy :: Proxy sub)
