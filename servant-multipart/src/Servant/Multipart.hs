@@ -255,11 +255,12 @@ defaultTmpBackendOptions = TmpBackendOptions
 
 -- | Default configuration for multipart handling.
 --
---   Uses 'defaultParseRequestBodyOptions' and
---   'defaultBackendOptions' respectively.
+--   Uses 'defaultParseRequestBodyOptions' with a maximum size of 25 MiB
+--   per file, and 'defaultBackendOptions'. Use 'setMaxRequestFileSize' or
+--   'noLimitParseRequestBodyOptions' on 'generalOptions' to change the limit.
 defaultMultipartOptions :: MultipartBackend tag => Proxy tag -> MultipartOptions tag
 defaultMultipartOptions pTag = MultipartOptions
-  { generalOptions = defaultParseRequestBodyOptions
+  { generalOptions = setMaxRequestFileSize (25 * 1024 * 1024) defaultParseRequestBodyOptions
   , backendOptions = defaultBackendOptions pTag
   }
 
