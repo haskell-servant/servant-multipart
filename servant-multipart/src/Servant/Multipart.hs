@@ -286,8 +286,9 @@ instance {-# OVERLAPPING #-}
 -- inputs for your type for use with "Servant.Docs".  This is used by the
 -- 'HasDocs' instance for 'MultipartForm'.
 --
--- Given the example 'User' type and 'FromMultipart' instance above, here is a
--- corresponding 'ToMultipartSample' instance:
+-- Given the example @User@ type and 'FromMultipart' instance from the
+-- 'MultipartForm' documentation, here is a corresponding 'ToMultipartSample'
+-- instance:
 --
 -- @
 --   data User = User { username :: Text, pic :: FilePath }

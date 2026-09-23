@@ -58,11 +58,11 @@ import qualified Data.ByteString.Lazy as LBS
 --   stand now. This also means that 'MultipartForm' can't be used in
 --   conjunction with 'ReqBody' in an endpoint.
 --
---   The 'tag' type parameter instructs the function to handle data
+--   The @tag@ type parameter instructs servant-multipart to handle data
 --   either as data to be saved to temporary storage ('Tmp') or saved to
 --   memory ('Mem').
 --
---   The 'a' type parameter represents the Haskell type to which
+--   The @a@ type parameter represents the Haskell type to which
 --   you are going to decode the multipart data to, where the
 --   multipart data consists in all the usual form inputs along
 --   with the files sent along through @\<input type="file"\>@
@@ -111,18 +111,18 @@ import qualified Data.ByteString.Lazy as LBS
 --   server :: User -> Handler String
 --   server usr = return str
 --
---     where str = username usr ++ "'s profile picture"
+--     where str = unpack (username usr) ++ "'s profile picture"
 --              ++ " got temporarily uploaded to "
 --              ++ pic usr ++ " and will be removed from there "
 --              ++ " after this handler has run."
 --   @
 --
 --   Note that the behavior of this combinator is configurable,
---   by using 'serveWithContext' from servant-server instead of 'serve',
---   which takes an additional 'Context' argument. It simply is an
---   heterogeneous list where you can for example store
---   a value of type 'MultipartOptions' that has the configuration that
---   you want, which would then get picked up by servant-multipart.
+--   by using @serveWithContext@ from servant-server instead of @serve@,
+--   which takes an additional @Context@ argument. @Context@ is a
+--   heterogeneous list where you can for example store a value of type
+--   @MultipartOptions@ from servant-multipart that has the configuration
+--   that you want, which would then get picked up by servant-multipart.
 --
 --   __Important__: as mentioned in the example above,
 --   the file paths point to temporary files which get removed
@@ -149,8 +149,8 @@ data MultipartForm' (mods :: [*]) tag a
 
 -- | What servant gets out of a @multipart/form-data@ form submission.
 --
---   The type parameter 'tag' tells if 'MultipartData' is stored as a
---   temporary file or stored in memory. 'tag' is type of either 'Mem'
+--   The type parameter @tag@ tells if 'MultipartData' is stored as a
+--   temporary file or stored in memory. @tag@ is type of either 'Mem'
 --   or 'Tmp'.
 --
 --   The 'inputs' field contains a list of textual 'Input's, where
@@ -262,7 +262,7 @@ lookupAllFiles iname mpd = [ f | f <- files mpd, fdInputName f == iname ]
 -- @
 -- let mpd = MultipartData [Input "age" "30"] []
 -- lookupInputAs "age"     mpd == Right (30 :: Int)
--- lookupInputAs "isAdmin" mpd == Left "Field isAdmin not found"
+-- lookupInputAs "isAdmin" mpd == (Left "Field isAdmin not found" :: Either String Int)
 -- @
 lookupInputAs :: FromHttpApiData a => Text -> MultipartData tag -> Either String a
 lookupInputAs iname mpd = do
@@ -343,8 +343,8 @@ instance NFData Input where
 --
 --   instance FromMultipart Tmp User where
 --     fromMultipart form =
---       User \<$\> lookupInput "username" (inputs form)
---            \<*\> fmap fdPayload (lookupFile "pic" $ files form)
+--       User \<$\> lookupInput "username" form
+--            \<*\> fmap fdPayload (lookupFile "pic" form)
 --   @
 class FromMultipart tag a where
   -- | Given a value of type 'MultipartData', which consists
@@ -366,13 +366,13 @@ instance FromMultipart tag (MultipartData tag) where
 --   instance ToMultipart Tmp User where
 --       toMultipart user = MultipartData [Input "username" $ username user]
 --                                        [FileData "pic"
---                                                  (pic user)
+--                                                  (pack (takeFileName (pic user)))
 --                                                  "image/png"
 --                                                  (pic user)
 --                                        ]
 --   @
 class ToMultipart tag a where
-  -- | Given a value of type 'a', convert it to a
+  -- | Given a value of type @a@, convert it to a
   -- 'MultipartData'.
   toMultipart :: a -> MultipartData tag
 
