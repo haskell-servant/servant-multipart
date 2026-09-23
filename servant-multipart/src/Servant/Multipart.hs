@@ -50,6 +50,7 @@ import Data.Text (Text, unpack)
 import Data.Text.Encoding (decodeUtf8')
 import Data.Typeable
 import Network.Wai
+import Network.Wai.Handler.Warp (InvalidRequest (PayloadTooLarge, RequestHeaderFieldsTooLarge))
 import Network.Wai.Parse
 import Servant hiding (contentType)
 import Servant.API.Modifiers (FoldLenient)
@@ -58,6 +59,7 @@ import Servant.Foreign hiding (contentType)
 import Servant.Server.Internal
 import System.Directory
 
+import qualified Control.Exception        as E
 import qualified Data.ByteString          as SBS
 import qualified Data.Text.Lazy           as TL
 import qualified Data.Text.Lazy.Encoding  as TLE
@@ -138,16 +140,44 @@ instance ( FromMultipart tag a
 check :: MultipartBackend tag
       => Proxy tag
       -> MultipartOptions tag
-      -> DelayedIO (Either String (MultipartData tag))
+      -> DelayedIO (Either LimitExceeded (Either String (MultipartData tag)))
 check pTag tag = withRequest $ \request -> do
   st <- liftResourceT getInternalState
-  rawData <- liftIO
-      $ parseRequestBodyEx
-          parseOpts
-          (backend pTag (backendOptions tag) st)
-          request
-  return (fromRaw rawData)
+  let parse = fromRaw <$> parseRequestBodyEx parseOpts (backend pTag (backendOptions tag) st) request
+  liftIO $
+    E.catchJust invalidRequestLimit
+      (E.handle (pure . Left . requestParseLimit) (Right <$> parse))
+      (pure . Left)
   where parseOpts = generalOptions tag
+
+data LimitExceeded = LimitExceeded
+  { statusOverride :: Maybe (Int, String)
+  , limitMessage   :: String
+  }
+
+requestParseLimit :: RequestParseException -> LimitExceeded
+requestParseLimit e = case e of
+  MaxParamSizeExceeded _ -> LimitExceeded payloadTooLarge "the form exceeds a size limit"
+  ParamNameTooLong _ maxLength ->
+    LimitExceeded Nothing $ "an input name exceeds " <> show maxLength <> " bytes"
+  FilenameTooLong _ maxLength ->
+    LimitExceeded Nothing $ "a file input name exceeds " <> show maxLength <> " bytes"
+  MaxFileNumberExceeded maxFiles ->
+    LimitExceeded Nothing $ "the form has more than " <> show maxFiles <> " files"
+  TooManyHeaderLines _ -> LimitExceeded headerFieldsTooLarge "a part has too many header lines"
+
+invalidRequestLimit :: InvalidRequest -> Maybe LimitExceeded
+invalidRequestLimit e = case e of
+  PayloadTooLarge -> Just $ LimitExceeded payloadTooLarge "the form exceeds a size limit"
+  RequestHeaderFieldsTooLarge ->
+    Just $ LimitExceeded headerFieldsTooLarge "a part header line exceeds the length limit"
+  _ -> Nothing
+
+payloadTooLarge :: Maybe (Int, String)
+payloadTooLarge = Just (errHTTPCode err413, errReasonPhrase err413)
+
+headerFieldsTooLarge :: Maybe (Int, String)
+headerFieldsTooLarge = Just (431, "Request Header Fields Too Large")
 
 -- Add multipart extraction support to a Delayed.
 addMultipartHandling :: forall tag multipart (mods :: [*]) config env a.
@@ -168,15 +198,21 @@ addMultipartHandling pTag opts config subserver =
       fuzzyMultipartCTCheck (contentTypeH request)
 
     bodyCheck () = withRequest $ \ request -> do
-      mpd <- check pTag opts :: DelayedIO (Either String (MultipartData tag))
-      case (sbool :: SBool (FoldLenient mods), mpd >>= fromMultipart @tag @multipart) of
-        (SFalse, Left msg) -> liftRouteResult $ FailFatal $ formatError request msg
-        (SFalse, Right x) -> return x
-        (STrue, res) -> return res
+      parsed <- check pTag opts
+      case parsed of
+        Left LimitExceeded {..} ->
+          liftRouteResult $ FailFatal $ withStatus statusOverride (formatError request limitMessage)
+        Right mpd ->
+          case (sbool :: SBool (FoldLenient mods), mpd >>= fromMultipart @tag @multipart) of
+            (SFalse, Left msg) -> liftRouteResult $ FailFatal $ formatError request msg
+            (SFalse, Right x) -> return x
+            (STrue, res) -> return res
 
     contentTypeH req = fromMaybe "application/octet-stream" $
           lookup "Content-Type" (requestHeaders req)
 
+    withStatus = maybe id $ \(code, phrase) err ->
+      err { errHTTPCode = code, errReasonPhrase = phrase }
     defaultFormatError msg = err400 { errBody = "Could not decode multipart mime body: " <> TLE.encodeUtf8 (TL.pack msg) }
     pFormatters = Proxy :: Proxy ErrorFormatters
     rep = typeRep (Proxy :: Proxy MultipartForm')
@@ -214,6 +250,13 @@ fuzzyMultipartCTCheck ct
 --   See haddocks for 'ParseRequestBodyOptions' and
 --   'TmpBackendOptions' respectively for more information on
 --   what you can tweak.
+--
+--   A form that exceeds one of the 'generalOptions' limits is rejected
+--   before the handler runs, even under 'Servant.API.Modifiers.Lenient'.
+--   The response is built by the 'ErrorFormatters' in the context, if any,
+--   like other request body errors, except that exceeding a size limit
+--   always responds with status 413 and exceeding a part header limit
+--   always responds with status 431.
 data MultipartOptions tag = MultipartOptions
   { generalOptions        :: ParseRequestBodyOptions
   , backendOptions        :: MultipartBackendOptions tag

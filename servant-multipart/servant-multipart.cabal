@@ -44,6 +44,7 @@ library
     , servant-server      >=0.20.3   && <0.21
     , wai                 >=3.2.5    && <3.3
     , wai-extra           >=3.1.18   && <3.2
+    , warp                >=3.3.22   && <3.5
 
 test-suite servant-multipart-test
   type:             exitcode-stdio-1.0
@@ -59,6 +60,7 @@ test-suite servant-multipart-test
     , tasty
     , tasty-wai
     , text
+    , wai-extra
 
 source-repository head
   type:     git
