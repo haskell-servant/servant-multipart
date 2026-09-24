@@ -44,6 +44,7 @@ module Servant.Multipart
 
 import Servant.Multipart.API
 
+import Control.DeepSeq (NFData (rnf))
 import Control.Lens ((<>~), (&), view, (.~))
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Resource
@@ -157,6 +158,11 @@ data CheckError
     -- ^ The form's text is not valid UTF-8, or 'fromMultipart' failed.
   | LimitError LimitExceeded
     -- ^ The form exceeds one of the 'generalOptions' limits.
+  deriving (Eq, Show)
+
+instance NFData CheckError where
+  rnf (ParseError message) = rnf message
+  rnf (LimitError limit) = rnf limit
 
 -- | A @multipart/form-data@ request body that exceeds one of the
 --   'generalOptions' limits.
@@ -165,7 +171,10 @@ data LimitExceeded = LimitExceeded
     -- ^ The status code and reason phrase that the rejection responds with
     --   in place of the one from the 'ErrorFormatters', if any.
   , limitMessage   :: String
-  }
+  } deriving (Eq, Show)
+
+instance NFData LimitExceeded where
+  rnf (LimitExceeded override message) = rnf override `seq` rnf message
 
 requestParseLimit :: RequestParseException -> LimitExceeded
 requestParseLimit e = case e of
