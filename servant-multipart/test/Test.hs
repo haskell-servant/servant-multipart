@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeOperators         #-}
 
@@ -75,6 +76,7 @@ blogPostLenientHandler eitherBP =
   return $ case eitherBP of
     Left (ParseError msg) -> "parse error: " <> pack msg
     Left (LimitError limit) -> "limit exceeded: " <> pack (limitMessage limit)
+    Left (DecodeError InvalidUtf8 {..}) -> "decoding error: " <> pack (part <> " of " <> kind <> " " <> show iname <> " is not valid UTF-8")
     Right bp -> title bp
 
 blogPostRawHandler :: MultipartData Mem -> Handler Text

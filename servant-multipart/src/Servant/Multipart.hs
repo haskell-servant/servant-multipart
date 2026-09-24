@@ -28,6 +28,7 @@ module Servant.Multipart
   , lookupAllInputsAs 
   , CheckError(..)
   , LimitExceeded(..)
+  , InvalidUtf8(..)
   , MultipartOptions(..)
   , defaultMultipartOptions
   , MultipartBackend(..)
@@ -67,8 +68,9 @@ import qualified Control.Exception        as E
 import qualified Data.ByteString          as SBS
 import qualified Data.Text.Lazy           as TL
 import qualified Data.Text.Lazy.Encoding  as TLE
+
 fromRaw :: forall tag. ([Network.Wai.Parse.Param], [File (MultipartResult tag)])
-        -> Either String (MultipartData tag)
+        -> Either CheckError (MultipartData tag)
 fromRaw (inputs, files) =
   MultipartData <$> traverse toInput inputs <*> traverse toFile files
 
@@ -76,7 +78,7 @@ fromRaw (inputs, files) =
           Input <$> decInput "name" iname iname
                 <*> decInput "value" iname val
 
-        toFile :: File (MultipartResult tag) -> Either String (FileData tag)
+        toFile :: File (MultipartResult tag) -> Either CheckError (FileData tag)
         toFile (iname, fileinfo) =
           FileData <$> decFile "name" iname iname
                    <*> decFile "file name" iname (fileName fileinfo)
@@ -87,13 +89,11 @@ fromRaw (inputs, files) =
         decFile  = dec "file input"
 
         dec :: String -> String -> SBS.ByteString -> SBS.ByteString
-            -> Either String Text
+            -> Either CheckError Text
         dec kind part iname raw =
           case decodeUtf8' raw of
             Right text -> Right text
-            Left _     -> Left $
-              part <> " of " <> kind <> " " <> show iname
-                   <> " is not valid UTF-8"
+            Left _     -> Left $ DecodeError $ InvalidUtf8 part kind iname
 
 class MultipartBackend tag where
     type MultipartBackendOptions tag :: *
@@ -143,7 +143,7 @@ check :: MultipartBackend tag
       -> DelayedIO (Either CheckError (MultipartData tag))
 check pTag tag = withRequest $ \request -> do
   st <- liftResourceT getInternalState
-  let parse = first ParseError . fromRaw <$> parseRequestBodyEx parseOpts (backend pTag (backendOptions tag) st) request
+  let parse = fromRaw <$> parseRequestBodyEx parseOpts (backend pTag (backendOptions tag) st) request
   liftIO $
     E.catchJust invalidRequestLimit
       (E.handle (pure . Left . LimitError . requestParseLimit) parse)
@@ -155,6 +155,7 @@ check pTag tag = withRequest $ \request -> do
 --   the request being rejected.
 data CheckError
   = ParseError String
+  | DecodeError InvalidUtf8
     -- ^ The form's text is not valid UTF-8, or 'fromMultipart' failed.
   | LimitError LimitExceeded
     -- ^ The form exceeds one of the 'generalOptions' limits.
@@ -162,6 +163,7 @@ data CheckError
 
 instance NFData CheckError where
   rnf (ParseError message) = rnf message
+  rnf (DecodeError limit) = rnf limit
   rnf (LimitError limit) = rnf limit
 
 -- | A @multipart/form-data@ request body that exceeds one of the
@@ -175,6 +177,15 @@ data LimitExceeded = LimitExceeded
 
 instance NFData LimitExceeded where
   rnf (LimitExceeded override message) = rnf override `seq` rnf message
+
+data InvalidUtf8 = InvalidUtf8
+  { kind :: String
+  , part :: String
+  , iname :: SBS.ByteString
+  } deriving (Eq, Show)
+
+instance NFData InvalidUtf8 where
+  rnf (InvalidUtf8 {..}) = rnf kind `seq` rnf part `seq` rnf iname
 
 requestParseLimit :: RequestParseException -> LimitExceeded
 requestParseLimit e = case e of
@@ -224,6 +235,10 @@ addMultipartHandling pTag opts config subserver =
         (SFalse, Left (ParseError msg)) -> liftRouteResult $ FailFatal $ formatError request msg
         (SFalse, Left (LimitError LimitExceeded {..})) ->
           liftRouteResult $ FailFatal $ withStatus statusOverride (formatError request limitMessage)
+        (SFalse, Left (DecodeError InvalidUtf8 {..})) ->
+          liftRouteResult $ FailFatal $ formatError request $
+              part <> " of " <> kind <> " " <> show iname
+                   <> " is not valid UTF-8"
         (SFalse, Right x) -> return x
         (STrue, res) -> return res
 
