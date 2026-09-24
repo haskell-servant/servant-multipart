@@ -26,6 +26,8 @@ module Servant.Multipart
   , lookupAllFiles 
   , lookupInputAs 
   , lookupAllInputsAs 
+  , CheckError(..)
+  , LimitExceeded(..)
   , MultipartOptions(..)
   , defaultMultipartOptions
   , MultipartBackend(..)
@@ -45,6 +47,7 @@ import Servant.Multipart.API
 import Control.Lens ((<>~), (&), view, (.~))
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Resource
+import Data.Bifunctor (first)
 import Data.Maybe
 import Data.Text (Text, unpack)
 import Data.Text.Encoding (decodeUtf8')
@@ -119,7 +122,7 @@ instance ( FromMultipart tag a
       => HasServer (MultipartForm' mods tag a :> sublayout) config where
 
   type ServerT (MultipartForm' mods tag a :> sublayout) m =
-    If (FoldLenient mods) (Either String a) a -> ServerT sublayout m
+    If (FoldLenient mods) (Either CheckError a) a -> ServerT sublayout m
 
   hoistServerWithContext _ pc nt s = hoistServerWithContext (Proxy :: Proxy sublayout) pc nt . s
 
@@ -133,25 +136,34 @@ instance ( FromMultipart tag a
                     $ lookupContext popts config
       subserver' = addMultipartHandling @tag @a @mods @config pbak multipartOpts config subserver
 
--- Try and extract the request body as multipart/form-data,
--- returning the data as well as the resourcet InternalState
--- that allows us to properly clean up the temporary files
--- later on.
 check :: MultipartBackend tag
       => Proxy tag
       -> MultipartOptions tag
-      -> DelayedIO (Either LimitExceeded (Either String (MultipartData tag)))
+      -> DelayedIO (Either CheckError (MultipartData tag))
 check pTag tag = withRequest $ \request -> do
   st <- liftResourceT getInternalState
-  let parse = fromRaw <$> parseRequestBodyEx parseOpts (backend pTag (backendOptions tag) st) request
+  let parse = first ParseError . fromRaw <$> parseRequestBodyEx parseOpts (backend pTag (backendOptions tag) st) request
   liftIO $
     E.catchJust invalidRequestLimit
-      (E.handle (pure . Left . requestParseLimit) (Right <$> parse))
-      (pure . Left)
+      (E.handle (pure . Left . LimitError . requestParseLimit) parse)
+      (pure . Left . LimitError)
   where parseOpts = generalOptions tag
 
+-- | Why a @multipart/form-data@ request body was not decoded. Under
+--   'Servant.API.Modifiers.Lenient', the handler is passed this instead of
+--   the request being rejected.
+data CheckError
+  = ParseError String
+    -- ^ The form's text is not valid UTF-8, or 'fromMultipart' failed.
+  | LimitError LimitExceeded
+    -- ^ The form exceeds one of the 'generalOptions' limits.
+
+-- | A @multipart/form-data@ request body that exceeds one of the
+--   'generalOptions' limits.
 data LimitExceeded = LimitExceeded
   { statusOverride :: Maybe (Int, String)
+    -- ^ The status code and reason phrase that the rejection responds with
+    --   in place of the one from the 'ErrorFormatters', if any.
   , limitMessage   :: String
   }
 
@@ -189,7 +201,7 @@ addMultipartHandling :: forall tag multipart (mods :: [*]) config env a.
                      => Proxy tag
                      -> MultipartOptions tag
                      -> Context config
-                     -> Delayed env (If (FoldLenient mods) (Either String multipart) multipart -> a)
+                     -> Delayed env (If (FoldLenient mods) (Either CheckError multipart) multipart -> a)
                      -> Delayed env a
 addMultipartHandling pTag opts config subserver =
   addBodyCheck subserver contentCheck bodyCheck
@@ -198,15 +210,13 @@ addMultipartHandling pTag opts config subserver =
       fuzzyMultipartCTCheck (contentTypeH request)
 
     bodyCheck () = withRequest $ \ request -> do
-      parsed <- check pTag opts
-      case parsed of
-        Left LimitExceeded {..} ->
+      checked <- check pTag opts
+      case (sbool :: SBool (FoldLenient mods), checked >>= first ParseError . fromMultipart @tag @multipart) of
+        (SFalse, Left (ParseError msg)) -> liftRouteResult $ FailFatal $ formatError request msg
+        (SFalse, Left (LimitError LimitExceeded {..})) ->
           liftRouteResult $ FailFatal $ withStatus statusOverride (formatError request limitMessage)
-        Right mpd ->
-          case (sbool :: SBool (FoldLenient mods), mpd >>= fromMultipart @tag @multipart) of
-            (SFalse, Left msg) -> liftRouteResult $ FailFatal $ formatError request msg
-            (SFalse, Right x) -> return x
-            (STrue, res) -> return res
+        (SFalse, Right x) -> return x
+        (STrue, res) -> return res
 
     contentTypeH req = fromMaybe "application/octet-stream" $
           lookup "Content-Type" (requestHeaders req)
@@ -252,9 +262,10 @@ fuzzyMultipartCTCheck ct
 --   what you can tweak.
 --
 --   A form that exceeds one of the 'generalOptions' limits is rejected
---   before the handler runs, even under 'Servant.API.Modifiers.Lenient'.
---   The response is built by the 'ErrorFormatters' in the context, if any,
---   like other request body errors, except that exceeding a size limit
+--   before the handler runs, unless 'Servant.API.Modifiers.Lenient' is used,
+--   in which case the handler is passed a 'LimitError'. The response is
+--   built by the 'ErrorFormatters' in the context, if any, like other
+--   request body errors, except that exceeding a size limit
 --   always responds with status 413 and exceeding a part header limit
 --   always responds with status 431.
 data MultipartOptions tag = MultipartOptions

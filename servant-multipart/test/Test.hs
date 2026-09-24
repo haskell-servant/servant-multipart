@@ -10,7 +10,7 @@ import qualified Data.ByteString.Lazy as BSL (replicate)
 import qualified Data.ByteString.Lazy.Char8 as BSL8 (pack)
 import Data.List                 (intersperse)
 import Data.Monoid
-import Data.Text                 (Text)
+import Data.Text                 (Text, pack)
 import Data.Text.Encoding        (decodeUtf8)
 import Network.HTTP.Types.Header (HeaderName, hContentType)
 import Network.Wai.Parse         (defaultParseRequestBodyOptions, setMaxRequestFileSize)
@@ -64,17 +64,18 @@ instance FromMultipart Mem BlogPost where
 
 type TestAPI
   =    "blogPostStrict" :> MultipartForm Mem BlogPost :> Post '[PlainText] Text
-  :<|> "blogPostLenient" :> MultipartForm' '[Lenient] Mem BlogPost :> Post '[JSON] Bool
+  :<|> "blogPostLenient" :> MultipartForm' '[Lenient] Mem BlogPost :> Post '[PlainText] Text
   :<|> "blogPostRaw" :> MultipartForm Mem (MultipartData Mem) :> Post '[PlainText] Text
 
 blogPostStrictHandler :: BlogPost -> Handler Text
 blogPostStrictHandler bp = return $ title bp <> "\n" <> body bp
 
-blogPostLenientHandler :: Either String BlogPost -> Handler Bool
+blogPostLenientHandler :: Either CheckError BlogPost -> Handler Text
 blogPostLenientHandler eitherBP =
-  case eitherBP of
-    Left _  -> return False
-    Right _ -> return True
+  return $ case eitherBP of
+    Left (ParseError msg) -> "parse error: " <> pack msg
+    Left (LimitError limit) -> "limit exceeded: " <> pack (limitMessage limit)
+    Right bp -> title bp
 
 blogPostRawHandler :: MultipartData Mem -> Handler Text
 blogPostRawHandler md =
@@ -126,13 +127,13 @@ testBlogPostLenientHandler :: Session ()
 testBlogPostLenientHandler = do
   res <- srequest $ buildRequestWithHeaders POST "/blogPostLenient" correctBody multipartHeaders
   assertStatus 200 res
-  assertBody "true" res
+  assertBody "Foo post" res
 
 testBlogPostLenientHandlerPartialBody :: Session ()
 testBlogPostLenientHandlerPartialBody = do
   res <- srequest $ buildRequestWithHeaders POST "/blogPostLenient" partialBody multipartHeaders
   assertStatus 200 res
-  assertBody "false" res
+  assertBody "parse error: File body not found" res
 
 testBlogPostRawHandler :: Session ()
 testBlogPostRawHandler = do
@@ -179,7 +180,8 @@ testTooManyFiles = do
 testTooManyFilesLenient :: Session ()
 testTooManyFilesLenient = do
   res <- srequest $ buildRequestWithHeaders POST "/blogPostLenient" elevenFiles multipartHeaders
-  assertStatus 400 res
+  assertStatus 200 res
+  assertBody "limit exceeded: the form has more than 10 files" res
 
 testPartHeaderLineTooLong :: Session ()
 testPartHeaderLineTooLong = do
