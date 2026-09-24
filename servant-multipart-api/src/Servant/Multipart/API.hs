@@ -142,9 +142,10 @@ type MultipartForm tag a = MultipartForm' '[] tag a
 -- | 'MultipartForm' which can be modified with 'Servant.API.Modifiers.Lenient'.
 --
 --   Under 'Servant.API.Modifiers.Lenient', the handler is passed an
---   @'Either' 'String' a@ rather than the request being rejected, so it is
---   handed the message from a failed 'fromMultipart' call, or from a form
---   whose text is not valid UTF-8.
+--   @'Either' CheckError a@ from servant-multipart rather than the request
+--   being rejected, so it is handed the message from a failed
+--   'fromMultipart' call, from a form whose text is not valid UTF-8, or
+--   from a form that exceeds a body parsing limit.
 data MultipartForm' (mods :: [*]) tag a
 
 -- | What servant gets out of a @multipart/form-data@ form submission.

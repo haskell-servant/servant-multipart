@@ -26,6 +26,9 @@ module Servant.Multipart
   , lookupAllFiles 
   , lookupInputAs 
   , lookupAllInputsAs 
+  , CheckError(..)
+  , LimitExceeded(..)
+  , InvalidUtf8(..)
   , MultipartOptions(..)
   , defaultMultipartOptions
   , MultipartBackend(..)
@@ -42,14 +45,17 @@ module Servant.Multipart
 
 import Servant.Multipart.API
 
+import Control.DeepSeq (NFData (rnf))
 import Control.Lens ((<>~), (&), view, (.~))
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Resource
+import Data.Bifunctor (first)
 import Data.Maybe
 import Data.Text (Text, unpack)
 import Data.Text.Encoding (decodeUtf8')
 import Data.Typeable
 import Network.Wai
+import Network.Wai.Handler.Warp (InvalidRequest (PayloadTooLarge, RequestHeaderFieldsTooLarge))
 import Network.Wai.Parse
 import Servant hiding (contentType)
 import Servant.API.Modifiers (FoldLenient)
@@ -58,11 +64,13 @@ import Servant.Foreign hiding (contentType)
 import Servant.Server.Internal
 import System.Directory
 
+import qualified Control.Exception        as E
 import qualified Data.ByteString          as SBS
 import qualified Data.Text.Lazy           as TL
 import qualified Data.Text.Lazy.Encoding  as TLE
+
 fromRaw :: forall tag. ([Network.Wai.Parse.Param], [File (MultipartResult tag)])
-        -> Either String (MultipartData tag)
+        -> Either CheckError (MultipartData tag)
 fromRaw (inputs, files) =
   MultipartData <$> traverse toInput inputs <*> traverse toFile files
 
@@ -70,7 +78,7 @@ fromRaw (inputs, files) =
           Input <$> decInput "name" iname iname
                 <*> decInput "value" iname val
 
-        toFile :: File (MultipartResult tag) -> Either String (FileData tag)
+        toFile :: File (MultipartResult tag) -> Either CheckError (FileData tag)
         toFile (iname, fileinfo) =
           FileData <$> decFile "name" iname iname
                    <*> decFile "file name" iname (fileName fileinfo)
@@ -81,13 +89,11 @@ fromRaw (inputs, files) =
         decFile  = dec "file input"
 
         dec :: String -> String -> SBS.ByteString -> SBS.ByteString
-            -> Either String Text
+            -> Either CheckError Text
         dec kind part iname raw =
           case decodeUtf8' raw of
             Right text -> Right text
-            Left _     -> Left $
-              part <> " of " <> kind <> " " <> show iname
-                   <> " is not valid UTF-8"
+            Left _     -> Left $ DecodeError $ InvalidUtf8 part kind iname
 
 class MultipartBackend tag where
     type MultipartBackendOptions tag :: *
@@ -117,7 +123,7 @@ instance ( FromMultipart tag a
       => HasServer (MultipartForm' mods tag a :> sublayout) config where
 
   type ServerT (MultipartForm' mods tag a :> sublayout) m =
-    If (FoldLenient mods) (Either String a) a -> ServerT sublayout m
+    If (FoldLenient mods) (Either CheckError a) a -> ServerT sublayout m
 
   hoistServerWithContext _ pc nt s = hoistServerWithContext (Proxy :: Proxy sublayout) pc nt . s
 
@@ -131,23 +137,79 @@ instance ( FromMultipart tag a
                     $ lookupContext popts config
       subserver' = addMultipartHandling @tag @a @mods @config pbak multipartOpts config subserver
 
--- Try and extract the request body as multipart/form-data,
--- returning the data as well as the resourcet InternalState
--- that allows us to properly clean up the temporary files
--- later on.
 check :: MultipartBackend tag
       => Proxy tag
       -> MultipartOptions tag
-      -> DelayedIO (Either String (MultipartData tag))
+      -> DelayedIO (Either CheckError (MultipartData tag))
 check pTag tag = withRequest $ \request -> do
   st <- liftResourceT getInternalState
-  rawData <- liftIO
-      $ parseRequestBodyEx
-          parseOpts
-          (backend pTag (backendOptions tag) st)
-          request
-  return (fromRaw rawData)
+  let parse = fromRaw <$> parseRequestBodyEx parseOpts (backend pTag (backendOptions tag) st) request
+  liftIO $
+    E.catchJust invalidRequestLimit
+      (E.handle (pure . Left . LimitError . requestParseLimit) parse)
+      (pure . Left . LimitError)
   where parseOpts = generalOptions tag
+
+-- | Why a @multipart/form-data@ request body was not decoded. Under
+--   'Servant.API.Modifiers.Lenient', the handler is passed this instead of
+--   the request being rejected.
+data CheckError
+  = ParseError String
+  | DecodeError InvalidUtf8
+    -- ^ The form's text is not valid UTF-8, or 'fromMultipart' failed.
+  | LimitError LimitExceeded
+    -- ^ The form exceeds one of the 'generalOptions' limits.
+  deriving (Eq, Show)
+
+instance NFData CheckError where
+  rnf (ParseError message) = rnf message
+  rnf (DecodeError limit) = rnf limit
+  rnf (LimitError limit) = rnf limit
+
+-- | A @multipart/form-data@ request body that exceeds one of the
+--   'generalOptions' limits.
+data LimitExceeded = LimitExceeded
+  { statusOverride :: Maybe (Int, String)
+    -- ^ The status code and reason phrase that the rejection responds with
+    --   in place of the one from the 'ErrorFormatters', if any.
+  , limitMessage   :: String
+  } deriving (Eq, Show)
+
+instance NFData LimitExceeded where
+  rnf (LimitExceeded override message) = rnf override `seq` rnf message
+
+data InvalidUtf8 = InvalidUtf8
+  { kind :: String
+  , part :: String
+  , iname :: SBS.ByteString
+  } deriving (Eq, Show)
+
+instance NFData InvalidUtf8 where
+  rnf (InvalidUtf8 {..}) = rnf kind `seq` rnf part `seq` rnf iname
+
+requestParseLimit :: RequestParseException -> LimitExceeded
+requestParseLimit e = case e of
+  MaxParamSizeExceeded _ -> LimitExceeded payloadTooLarge "the form exceeds a size limit"
+  ParamNameTooLong _ maxLength ->
+    LimitExceeded Nothing $ "an input name exceeds " <> show maxLength <> " bytes"
+  FilenameTooLong _ maxLength ->
+    LimitExceeded Nothing $ "a file input name exceeds " <> show maxLength <> " bytes"
+  MaxFileNumberExceeded maxFiles ->
+    LimitExceeded Nothing $ "the form has more than " <> show maxFiles <> " files"
+  TooManyHeaderLines _ -> LimitExceeded headerFieldsTooLarge "a part has too many header lines"
+
+invalidRequestLimit :: InvalidRequest -> Maybe LimitExceeded
+invalidRequestLimit e = case e of
+  PayloadTooLarge -> Just $ LimitExceeded payloadTooLarge "the form exceeds a size limit"
+  RequestHeaderFieldsTooLarge ->
+    Just $ LimitExceeded headerFieldsTooLarge "a part header line exceeds the length limit"
+  _ -> Nothing
+
+payloadTooLarge :: Maybe (Int, String)
+payloadTooLarge = Just (errHTTPCode err413, errReasonPhrase err413)
+
+headerFieldsTooLarge :: Maybe (Int, String)
+headerFieldsTooLarge = Just (431, "Request Header Fields Too Large")
 
 -- Add multipart extraction support to a Delayed.
 addMultipartHandling :: forall tag multipart (mods :: [*]) config env a.
@@ -159,7 +221,7 @@ addMultipartHandling :: forall tag multipart (mods :: [*]) config env a.
                      => Proxy tag
                      -> MultipartOptions tag
                      -> Context config
-                     -> Delayed env (If (FoldLenient mods) (Either String multipart) multipart -> a)
+                     -> Delayed env (If (FoldLenient mods) (Either CheckError multipart) multipart -> a)
                      -> Delayed env a
 addMultipartHandling pTag opts config subserver =
   addBodyCheck subserver contentCheck bodyCheck
@@ -168,15 +230,23 @@ addMultipartHandling pTag opts config subserver =
       fuzzyMultipartCTCheck (contentTypeH request)
 
     bodyCheck () = withRequest $ \ request -> do
-      mpd <- check pTag opts :: DelayedIO (Either String (MultipartData tag))
-      case (sbool :: SBool (FoldLenient mods), mpd >>= fromMultipart @tag @multipart) of
-        (SFalse, Left msg) -> liftRouteResult $ FailFatal $ formatError request msg
+      checked <- check pTag opts
+      case (sbool :: SBool (FoldLenient mods), checked >>= first ParseError . fromMultipart @tag @multipart) of
+        (SFalse, Left (ParseError msg)) -> liftRouteResult $ FailFatal $ formatError request msg
+        (SFalse, Left (LimitError LimitExceeded {..})) ->
+          liftRouteResult $ FailFatal $ withStatus statusOverride (formatError request limitMessage)
+        (SFalse, Left (DecodeError InvalidUtf8 {..})) ->
+          liftRouteResult $ FailFatal $ formatError request $
+              part <> " of " <> kind <> " " <> show iname
+                   <> " is not valid UTF-8"
         (SFalse, Right x) -> return x
         (STrue, res) -> return res
 
     contentTypeH req = fromMaybe "application/octet-stream" $
           lookup "Content-Type" (requestHeaders req)
 
+    withStatus = maybe id $ \(code, phrase) err ->
+      err { errHTTPCode = code, errReasonPhrase = phrase }
     defaultFormatError msg = err400 { errBody = "Could not decode multipart mime body: " <> TLE.encodeUtf8 (TL.pack msg) }
     pFormatters = Proxy :: Proxy ErrorFormatters
     rep = typeRep (Proxy :: Proxy MultipartForm')
@@ -214,6 +284,14 @@ fuzzyMultipartCTCheck ct
 --   See haddocks for 'ParseRequestBodyOptions' and
 --   'TmpBackendOptions' respectively for more information on
 --   what you can tweak.
+--
+--   A form that exceeds one of the 'generalOptions' limits is rejected
+--   before the handler runs, unless 'Servant.API.Modifiers.Lenient' is used,
+--   in which case the handler is passed a 'LimitError'. The response is
+--   built by the 'ErrorFormatters' in the context, if any, like other
+--   request body errors, except that exceeding a size limit
+--   always responds with status 413 and exceeding a part header limit
+--   always responds with status 431.
 data MultipartOptions tag = MultipartOptions
   { generalOptions        :: ParseRequestBodyOptions
   , backendOptions        :: MultipartBackendOptions tag
