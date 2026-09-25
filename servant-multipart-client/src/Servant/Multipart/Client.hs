@@ -37,6 +37,7 @@ import System.IO                    (IOMode (ReadMode), withFile)
 import System.Random                (getStdRandom, randomR)
 
 import qualified Data.ByteString.Lazy as LBS
+import qualified Data.Text            as T
 
 -- | Upon seeing @MultipartForm a :> ...@ in an API type,
 --   servant-client will take a parameter of type @(LBS.ByteString, a)@,
@@ -104,6 +105,12 @@ genBoundary = LBS.pack
 
 -- | Given a bytestring for the boundary, turns a `MultipartData` into
 -- a 'RequestBody'
+--
+-- Input names, file input names and file names are written as quoted
+-- strings: double quotes and backslashes are escaped with a backslash, and
+-- carriage returns and line feeds are percent-encoded as @%0D@ and @%0A@,
+-- as browsers do. Carriage returns and line feeds are stripped from file
+-- content types.
 multipartToBody :: forall tag
                 .  MultipartClient tag
                 => LBS.ByteString
@@ -114,14 +121,22 @@ multipartToBody boundary mp = RequestBodySource $
   where
     crlf = "\r\n"
     lencode = LBS.fromStrict . encodeUtf8
-    renderInput input = renderPart (lencode . iName $ input)
+    quotedValue = lencode . T.concatMap escapeQuoted
+    escapeQuoted c = case c of
+      '"' -> "\\\""
+      '\\' -> "\\\\"
+      '\r' -> "%0D"
+      '\n' -> "%0A"
+      _ -> T.singleton c
+    headerValue = lencode . T.filter (`notElem` ['\r', '\n'])
+    renderInput input = renderPart (quotedValue . iName $ input)
                                    "text/plain"
                                    ""
                                    (source . pure @[] . lencode . iValue $ input)
     renderFile :: FileData tag -> SourceIO LBS.ByteString
-    renderFile file = renderPart (lencode . fdInputName $ file)
-                                 (lencode . fdFileCType $ file)
-                                 ("; filename=\"" <> lencode (fdFileName file) <> "\"")
+    renderFile file = renderPart (quotedValue . fdInputName $ file)
+                                 (headerValue . fdFileCType $ file)
+                                 ("; filename=\"" <> quotedValue (fdFileName file) <> "\"")
                                  (loadFile (Proxy @tag) . fdPayload $ file)
     renderPart name contentType extraParams payload =
       source [ "--"
