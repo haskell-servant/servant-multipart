@@ -156,8 +156,9 @@ check pTag tag = withRequest $ \request -> do
 --   the request being rejected.
 data CheckError
   = ParseError String
+    -- ^ 'fromMultipart' failed.
   | DecodeError InvalidUtf8
-    -- ^ The form's text is not valid UTF-8, or 'fromMultipart' failed.
+    -- ^ The form's text is not valid UTF-8.
   | LimitError LimitExceeded
     -- ^ The form exceeds one of the 'generalOptions' limits.
   deriving (Eq, Show)
@@ -331,9 +332,23 @@ defaultTmpBackendOptions = TmpBackendOptions
 
 -- | Default configuration for multipart handling.
 --
---   Uses 'defaultParseRequestBodyOptions' with a maximum size of 25 MiB
---   per file, and 'defaultBackendOptions'. Use 'setMaxRequestFileSize' or
---   'noLimitParseRequestBodyOptions' on 'generalOptions' to change the limit.
+--   Uses 'defaultBackendOptions', and 'defaultParseRequestBodyOptions' with
+--   a per-file size limit added. The per-file limit is set here, and the
+--   others are the defaults of wai-extra 3.1.18. The resulting limits are:
+--
+--   * at most 25 MiB (@25 * 1024 * 1024@ bytes) per file
+--   * at most 10 files
+--   * no limit on the total size of all files
+--   * at most 65336 bytes of textual inputs in total
+--   * input and file input names of at most 32 bytes
+--   * at most 32 header lines per part, each of at most 8190 bytes
+--
+--   Since the total size of all files is not limited, a single request can
+--   carry up to 250 MiB of files, which the 'Mem' backend holds in memory
+--   and the 'Tmp' backend writes to disk. Use 'setMaxRequestFileSize',
+--   'setMaxRequestFilesSize', 'setMaxRequestNumFiles' and the other setters
+--   from "Network.Wai.Parse" on 'generalOptions' to change these limits, or
+--   'noLimitParseRequestBodyOptions' to remove them.
 defaultMultipartOptions :: MultipartBackend tag => Proxy tag -> MultipartOptions tag
 defaultMultipartOptions pTag = MultipartOptions
   { generalOptions = setMaxRequestFileSize (25 * 1024 * 1024) defaultParseRequestBodyOptions
