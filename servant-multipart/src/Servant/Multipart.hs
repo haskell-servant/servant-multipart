@@ -47,6 +47,7 @@ import Servant.Multipart.API
 
 import Control.DeepSeq (NFData (rnf))
 import Control.Lens ((<>~), (&), view, (.~))
+import Control.Monad (unless)
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Resource
 import Data.Bifunctor (first)
@@ -211,6 +212,9 @@ payloadTooLarge = Just (errHTTPCode err413, errReasonPhrase err413)
 headerFieldsTooLarge :: Maybe (Int, String)
 headerFieldsTooLarge = Just (431, "Request Header Fields Too Large")
 
+unsupportedMediaType :: Maybe (Int, String)
+unsupportedMediaType = Just (errHTTPCode err415, errReasonPhrase err415)
+
 -- Add multipart extraction support to a Delayed.
 addMultipartHandling :: forall tag multipart (mods :: [*]) config env a.
                      ( FromMultipart tag multipart
@@ -227,7 +231,9 @@ addMultipartHandling pTag opts config subserver =
   addBodyCheck subserver contentCheck bodyCheck
   where
     contentCheck = withRequest $ \request ->
-      fuzzyMultipartCTCheck (contentTypeH request)
+      unless (isFormContentType (contentTypeH request)) $
+        liftRouteResult $ Fail $ withStatus unsupportedMediaType $ formatError request
+          "the content type of the request body is not application/x-www-form-urlencoded or multipart/form-data"
 
     bodyCheck () = withRequest $ \ request -> do
       checked <- check pTag opts
@@ -255,21 +261,13 @@ addMultipartHandling pTag opts config subserver =
         Nothing -> defaultFormatError
         Just fmts -> bodyParserErrorFormatter fmts rep request
 
--- Check that the content type is one of:
---   - application/x-www-form-urlencoded
---   - multipart/form-data; boundary=something
-fuzzyMultipartCTCheck :: SBS.ByteString -> DelayedIO ()
-fuzzyMultipartCTCheck ct
-  | ctMatches = return ()
-  | otherwise = delayedFailFatal err400 {
-      errBody = "The content type of the request body is not in application/x-www-form-urlencoded or multipart/form-data"
-      }
-
+isFormContentType :: SBS.ByteString -> Bool
+isFormContentType ct =
+  case ctype of
+    "application/x-www-form-urlencoded" -> True
+    "multipart/form-data" | Just _bound <- lookup "boundary" attrs -> True
+    _ -> False
   where (ctype, attrs) = parseContentType ct
-        ctMatches = case ctype of
-          "application/x-www-form-urlencoded" -> True
-          "multipart/form-data" | Just _bound <- lookup "boundary" attrs -> True
-          _ -> False
 
 -- | Global options for configuring how the
 --   server should handle multipart data.

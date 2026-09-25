@@ -48,6 +48,13 @@ main = defaultMain $ testGroup "servant-multipart"
   , testGroup "form limits with custom ErrorFormatters"
       [ testWai customFormatterApp "too many files keeps formatter status" testTooManyFilesCustomFormatter
       , testWai customFormatterApp "file over size limit is 413" testFileOverSizeLimitCustomFormatter
+      , testWai customFormatterApp "unsupported content type is 415" testUnsupportedContentTypeCustomFormatter
+      ]
+  , testGroup "content type"
+      [ testWai testApp "unsupported content type" testUnsupportedContentType
+      , testWai testApp "multipart without boundary" testMultipartWithoutBoundary
+      , testWai alternativeApp "unsupported content type falls through to later route" testUnsupportedContentTypeFallsThrough
+      , testWai alternativeApp "multipart request matches multipart route" testMultipartBeforeAlternative
       ]
   ]
 
@@ -103,6 +110,15 @@ customFormatterApp =
   where
     customFormatters = defaultErrorFormatters
       { bodyParserErrorFormatter = \_ _ msg -> err422 { errBody = "custom: " <> BSL8.pack msg } }
+
+type AlternativeAPI
+  =    "upload" :> MultipartForm Mem (MultipartData Mem) :> Post '[PlainText] Text
+  :<|> "upload" :> ReqBody '[PlainText] Text :> Post '[PlainText] Text
+
+alternativeApp :: Application
+alternativeApp =
+  serve @AlternativeAPI Proxy $
+    blogPostRawHandler :<|> (\txt -> return $ "plain text: " <> txt)
 
 multipartHeaders :: [(HeaderName, BS.ByteString)]
 multipartHeaders = [(hContentType, "multipart/form-data; boundary=XX")]
@@ -221,6 +237,35 @@ testFileOverSizeLimitCustomFormatter = do
   res <- srequest $ buildRequestWithHeaders POST "/blogPostRaw" (formBody [filePart "file" (BSL.replicate 200 0x78)]) multipartHeaders
   assertStatus 413 res
   assertBody "custom: the form exceeds a size limit" res
+
+testUnsupportedContentType :: Session ()
+testUnsupportedContentType = do
+  res <- srequest $ buildRequestWithHeaders POST "/blogPostRaw" correctBody [(hContentType, "application/json")]
+  assertStatus 415 res
+  assertBody "Could not decode multipart mime body: the content type of the request body is not application/x-www-form-urlencoded or multipart/form-data" res
+
+testMultipartWithoutBoundary :: Session ()
+testMultipartWithoutBoundary = do
+  res <- srequest $ buildRequestWithHeaders POST "/blogPostRaw" correctBody [(hContentType, "multipart/form-data")]
+  assertStatus 415 res
+
+testUnsupportedContentTypeCustomFormatter :: Session ()
+testUnsupportedContentTypeCustomFormatter = do
+  res <- srequest $ buildRequestWithHeaders POST "/blogPostRaw" correctBody [(hContentType, "application/json")]
+  assertStatus 415 res
+  assertBody "custom: the content type of the request body is not application/x-www-form-urlencoded or multipart/form-data" res
+
+testUnsupportedContentTypeFallsThrough :: Session ()
+testUnsupportedContentTypeFallsThrough = do
+  res <- srequest $ buildRequestWithHeaders POST "/upload" "hello" [(hContentType, "text/plain;charset=utf-8")]
+  assertStatus 200 res
+  assertBody "plain text: hello" res
+
+testMultipartBeforeAlternative :: Session ()
+testMultipartBeforeAlternative = do
+  res <- srequest $ buildRequestWithHeaders POST "/upload" correctBody multipartHeaders
+  assertStatus 200 res
+  assertBody "title body" res
 
 elevenFiles :: BSL.ByteString
 elevenFiles = formBody (replicate 11 (filePart "file" "contents"))
